@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Playfair+Display:ital@1&display=swap');
+@import "tailwindcss";
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.font-signature {
+  font-family: 'Caveat', cursive, sans-serif;
+}
+
+.font-slogan {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* Hide print container on screens */
+.print-only-container {
+  display: none !important;
+}
+
+@media print {
+  /* Complete isolation: hide screen UI, navigation, buttons and modals */
+  header,
+  nav,
+  button,
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* When on invoice mode, hide screen container and show print-only-container */
+  body.portal-mode-invoices .screen-only-container {
+    display: none !important;
+  }
+
+  body.portal-mode-invoices .print-only-container {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    position: relative !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    visibility: visible !important;
+  }
+
+  /* When on other portals, make sure sheet fills page cleanly */
+  body:not(.portal-mode-invoices) .screen-only-container {
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: auto !important;
+  }
+
+  body:not(.portal-mode-invoices) main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body:not(.portal-mode-invoices) #architectural-schedule-printable-sheet,
+  body:not(.portal-mode-invoices) #structural-engineering-printable-sheet,
+  body:not(.portal-mode-invoices) #boq-schedule-printable-sheet,
+  body:not(.portal-mode-invoices) #inspection-printable-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    padding: 14px !important;
+    width: 100% !important;
+    max-width: 194mm !important;
+    background: #ffffff !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .invoice-paper-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 194mm !important;
+    background: #ffffff !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    page-break-before: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 6mm auto;
+  }
+}

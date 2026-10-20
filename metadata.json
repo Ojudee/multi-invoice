@@ -1,0 +1,6 @@
+{
+  "name": "Univision Advance Invoice System",
+  "description": "Advanced architectural services invoice generator and management system with rate-per-m² calculations, package tiers, floor schedules, digital signatures, and PDF export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
