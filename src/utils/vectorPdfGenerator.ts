@@ -362,90 +362,309 @@ export function generateUnivisionPDF(invoice: Invoice): boolean {
     const c1W = 58;
     const c2W = 58;
     const c3W = 68;
-
-    // --- Column 1: Regular Package ---
-    doc.setDrawColor(...borderGray);
-    doc.setFillColor(255, 255, 255);
-    doc.rect(10, colY, c1W, colH, 'FD');
-
-    doc.setFillColor(...primaryNavy);
-    doc.rect(10, colY, c1W, 6.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(255, 255, 255);
-    doc.text('REGULAR PACKAGE', 10 + c1W / 2, colY + 3.2, { align: 'center' });
-    doc.setFontSize(8.5);
-    doc.setTextColor(245, 158, 11);
-    doc.text(`${currency} 75 /${unit}`, 10 + c1W / 2, colY + 5.8, { align: 'center' });
-
-    // Features
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.setTextColor(...textDark);
-    let fy = colY + 9.5;
-    const regFeatures = [
-      '3D Exterior Visualization',
-      'Concept Design',
-      'Floor Plans',
-      'Elevations & Sections',
-      'Roof Plan & Site Plan',
-      'Door & Window Schedule',
-      'Permit-Ready Drawings',
-      'PDF Drawing Set',
-    ];
-    regFeatures.forEach((f) => {
-      doc.setTextColor(2, 132, 199);
-      doc.text('✓', 12, fy);
-      doc.setTextColor(...textDark);
-      doc.text(f, 15, fy);
-      fy += 4.2;
-    });
-
-    // --- Column 2: Premium Package ---
-    const c2X = 10 + c1W + 3;
-    doc.setDrawColor(...brandGold);
-    doc.setFillColor(255, 255, 255);
-    doc.rect(c2X, colY, c2W, colH, 'FD');
-
-    doc.setFillColor(...brandGold);
-    doc.rect(c2X, colY, c2W, 6.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(255, 255, 255);
-    doc.text('PREMIUM PACKAGE', c2X + c2W / 2, colY + 3.2, { align: 'center' });
-    doc.setFontSize(8.5);
-    doc.text(`${currency} 100 /${unit}`, c2X + c2W / 2, colY + 5.8, { align: 'center' });
-
-    // Features
-    let pfy = colY + 9.5;
-    const premFeatures = [
-      'Everything in Regular Plus:',
-      'Interior Layouts',
-      'Ceiling & Flooring Plans',
-      'Kitchen & Toilet Details',
-      'Joinery Details',
-      'Detailed Construction Drawings',
-      'Video Walkthrough',
-      'Interior Design Consultation',
-    ];
-    premFeatures.forEach((f, i) => {
-      if (i === 0) {
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...brandGold);
-        doc.text(f, c2X + 2, pfy);
-      } else {
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(...brandGold);
-        doc.text('✓', c2X + 2, pfy);
-        doc.setTextColor(...textDark);
-        doc.text(f, c2X + 5, pfy);
-      }
-      pfy += 4.2;
-    });
-
-    // --- Column 3: Package Price & Selected Package ---
+    const c1X = 10;
+    const c2X = c1X + c1W + 3;
     const c3X = c2X + c2W + 3;
 
+    const isStructural = invoice.invoiceCategory === 'structural' || invoice.invoiceNumber.includes('STR');
+
+    if (isBOQ) {
+      // --- BOQ Column 1: Regular BOQ ---
+      doc.setDrawColor(...borderGray);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(10, colY, c1W, colH, 'FD');
+
+      doc.setFillColor(2, 132, 199); // Blue
+      doc.rect(10, colY, c1W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('BOQ REGULAR PACKAGE', 10 + c1W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(7.5);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${currency} 18,000 – 25,000`, 10 + c1W / 2, colY + 5.8, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(...textDark);
+      let fy = colY + 9.5;
+      const boqReg = [
+        'Detailed Quantity Takeoff',
+        'Material Breakdown & Quantities',
+        'Direct Labor Cost Schedule',
+        'Trade-by-Trade Cost Summary',
+        'Standard BOQ Report (PDF)',
+        'Municipal Tender Document',
+      ];
+      boqReg.forEach((f) => {
+        doc.setTextColor(2, 132, 199);
+        doc.text('✓', 12, fy);
+        doc.setTextColor(...textDark);
+        doc.text(f, 15, fy);
+        fy += 4.5;
+      });
+
+      // --- BOQ Column 2: Premium BOQ ---
+      doc.setDrawColor(5, 150, 105); // Green border
+      doc.setFillColor(255, 255, 255);
+      doc.rect(c2X, colY, c2W, colH, 'FD');
+
+      doc.setFillColor(5, 150, 105); // Emerald
+      doc.rect(c2X, colY, c2W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('BOQ PREMIUM PACKAGE', c2X + c2W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(7.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`${currency} 30,000 – 65,000`, c2X + c2W / 2, colY + 5.8, { align: 'center' });
+
+      let pfy = colY + 9.5;
+      const boqPrem = [
+        'Everything in Regular Plus:',
+        'Detailed Procurement Schedule',
+        'Subcontractor & Supplier Analysis',
+        'Cash Flow Disbursement Forecast',
+        'Tender Evaluation Matrix',
+        'Comprehensive Cost Consultancy',
+      ];
+      boqPrem.forEach((f, i) => {
+        if (i === 0) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(5, 150, 105);
+          doc.text(f, c2X + 2, pfy);
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(5, 150, 105);
+          doc.text('✓', c2X + 2, pfy);
+          doc.setTextColor(...textDark);
+          doc.text(f, c2X + 5, pfy);
+        }
+        pfy += 4.5;
+      });
+    } else if (isInspection) {
+      // --- Site Inspection Combined Columns 1 & 2 ---
+      const inspectW = c1W + 3 + c2W;
+      doc.setDrawColor(...borderGray);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(10, colY, inspectW, colH, 'FD');
+
+      doc.setFillColor(...primaryNavy);
+      doc.rect(10, colY, inspectW, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('SITE INSPECTION & TECHNICAL CONSULTATION', 10 + inspectW / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(7.5);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${currency} 15,000 FIXED RATE / VISIT`, 10 + inspectW / 2, colY + 5.8, { align: 'center' });
+
+      // Left column: Included Services
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...primaryNavy);
+      doc.text('INCLUDED SERVICES:', 13, colY + 10.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(...textDark);
+      let ify = colY + 14.5;
+      const inspectServices = [
+        'On-site field inspection visit',
+        'Foundation & structural audit',
+        'Soil conditions & drainage review',
+        'Quality & compliance verification',
+        'Photographic defects log',
+      ];
+      inspectServices.forEach((s) => {
+        doc.setTextColor(5, 150, 105);
+        doc.text('✓', 13, ify);
+        doc.setTextColor(...textDark);
+        doc.text(s, 16, ify);
+        ify += 4.5;
+      });
+
+      // Right column: Official Deliverables
+      const rX = 10 + inspectW / 2 + 3;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...primaryNavy);
+      doc.text('OFFICIAL DELIVERABLES:', rX, colY + 10.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(...textDark);
+      let rfy = colY + 14.5;
+      const inspectDeliverables = [
+        'Stamped Engineering Site Report',
+        'Univision Technical Certification',
+        'Digital high-res photographic record',
+        'Remedial recommendations memo',
+        'Council inspection compliance copy',
+      ];
+      inspectDeliverables.forEach((d) => {
+        doc.setTextColor(...brandGold);
+        doc.text('•', rX, rfy);
+        doc.setTextColor(...textDark);
+        doc.text(d, rX + 3, rfy);
+        rfy += 4.5;
+      });
+    } else if (isStructural) {
+      // --- Structural Column 1: Regular ---
+      doc.setDrawColor(...borderGray);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(10, colY, c1W, colH, 'FD');
+
+      doc.setFillColor(30, 58, 138); // Dark blue
+      doc.rect(10, colY, c1W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('STRUCTURAL REGULAR', 10 + c1W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(8.5);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${currency} 65 /${unit}`, 10 + c1W / 2, colY + 5.8, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(...textDark);
+      let sfy = colY + 9.5;
+      const structReg = [
+        'Foundation Design & Layout',
+        'Column Placement & Detailing',
+        'Beam Schedules & Reinforcement',
+        'Standard BBS Schedule',
+        'Slab Design & Specifications',
+        'Permit-Ready Structural Set',
+      ];
+      structReg.forEach((f) => {
+        doc.setTextColor(2, 132, 199);
+        doc.text('✓', 12, sfy);
+        doc.setTextColor(...textDark);
+        doc.text(f, 15, sfy);
+        sfy += 4.5;
+      });
+
+      // --- Structural Column 2: Premium ---
+      doc.setDrawColor(4, 120, 87);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(c2X, colY, c2W, colH, 'FD');
+
+      doc.setFillColor(4, 120, 87);
+      doc.rect(c2X, colY, c2W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('STRUCTURAL PREMIUM', c2X + c2W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`${currency} 85 /${unit}`, c2X + c2W / 2, colY + 5.8, { align: 'center' });
+
+      let spfy = colY + 9.5;
+      const structPrem = [
+        'Everything in Regular Plus:',
+        'Detailed Engineering Calculations',
+        'Shear Wall & Core Details',
+        'Retaining Wall & Staircase BBS',
+        'Wind & Seismic Verification',
+        'Engineer Sign-off & Municipal Seal',
+      ];
+      structPrem.forEach((f, i) => {
+        if (i === 0) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(4, 120, 87);
+          doc.text(f, c2X + 2, spfy);
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(4, 120, 87);
+          doc.text('✓', c2X + 2, spfy);
+          doc.setTextColor(...textDark);
+          doc.text(f, c2X + 5, spfy);
+        }
+        spfy += 4.5;
+      });
+    } else {
+      // --- Architectural Column 1: Regular Package ---
+      doc.setDrawColor(...borderGray);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(10, colY, c1W, colH, 'FD');
+
+      doc.setFillColor(...primaryNavy);
+      doc.rect(10, colY, c1W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('REGULAR PACKAGE', 10 + c1W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(8.5);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${currency} 75 /${unit}`, 10 + c1W / 2, colY + 5.8, { align: 'center' });
+
+      // Features
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6);
+      doc.setTextColor(...textDark);
+      let fy = colY + 9.5;
+      const regFeatures = [
+        '3D Exterior Visualization',
+        'Concept Design',
+        'Floor Plans',
+        'Elevations & Sections',
+        'Roof Plan & Site Plan',
+        'Door & Window Schedule',
+        'Permit-Ready Drawings',
+        'PDF Drawing Set',
+      ];
+      regFeatures.forEach((f) => {
+        doc.setTextColor(2, 132, 199);
+        doc.text('✓', 12, fy);
+        doc.setTextColor(...textDark);
+        doc.text(f, 15, fy);
+        fy += 4.2;
+      });
+
+      // --- Architectural Column 2: Premium Package ---
+      doc.setDrawColor(...brandGold);
+      doc.setFillColor(255, 255, 255);
+      doc.rect(c2X, colY, c2W, colH, 'FD');
+
+      doc.setFillColor(...brandGold);
+      doc.rect(c2X, colY, c2W, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('PREMIUM PACKAGE', c2X + c2W / 2, colY + 3.2, { align: 'center' });
+      doc.setFontSize(8.5);
+      doc.text(`${currency} 100 /${unit}`, c2X + c2W / 2, colY + 5.8, { align: 'center' });
+
+      // Features
+      let pfy = colY + 9.5;
+      const premFeatures = [
+        'Everything in Regular Plus:',
+        'Interior Layouts',
+        'Ceiling & Flooring Plans',
+        'Kitchen & Toilet Details',
+        'Joinery Details',
+        'Detailed Construction Drawings',
+        'Video Walkthrough',
+        'Interior Design Consultation',
+      ];
+      premFeatures.forEach((f, i) => {
+        if (i === 0) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...brandGold);
+          doc.text(f, c2X + 2, pfy);
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...brandGold);
+          doc.text('✓', c2X + 2, pfy);
+          doc.setTextColor(...textDark);
+          doc.text(f, c2X + 5, pfy);
+        }
+        pfy += 4.2;
+      });
+    }
+
+    // --- Column 3: Package Price & Selected Package ---
     // Box A: Package Price
     doc.setDrawColor(...brandGold);
     doc.setFillColor(255, 255, 255);

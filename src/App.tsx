@@ -28,7 +28,7 @@ import {
   Archive,
   RotateCcw,
 } from 'lucide-react';
-import { Invoice, PackageType } from './types';
+import { Invoice, PackageType, PackageSelectionMap } from './types';
 import { INITIAL_INVOICES, createDefaultInvoiceByType } from './data/sampleInvoices';
 import {
   DEFAULT_COMPANY,
@@ -146,11 +146,17 @@ export default function App() {
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [printPreviewFilter, setPrintPreviewFilter] = useState<PackageSelectionMap | undefined>(undefined);
   const [isOfficialsModalOpen, setIsOfficialsModalOpen] = useState(false);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [isNewInvoiceModalOpen, setIsNewInvoiceModalOpen] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [notification, setNotification] = useState<string>('');
+
+  const handleOpenPrintPreview = (filter?: PackageSelectionMap) => {
+    setPrintPreviewFilter(filter);
+    setIsPrintPreviewOpen(true);
+  };
 
   // Scaling & fit modes for PC view
   const [splitFitMode, setSplitFitMode] = useState<'fit-width' | 'fit-page' | '100%'>('fit-width');
@@ -1002,7 +1008,7 @@ export default function App() {
 
                   <button
                     type="button"
-                    onClick={() => setIsPrintPreviewOpen(true)}
+                    onClick={() => handleOpenPrintPreview()}
                     className="px-3 py-1.5 text-xs font-bold text-white bg-[#0b2341] hover:bg-[#123963] border border-blue-500/50 hover:border-amber-400/60 rounded-lg shadow-sm transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer"
                     title="Open centered A4 Print Preview with margins and direct print"
                   >
@@ -1176,7 +1182,7 @@ export default function App() {
                     onSave={handleManualSave}
                     onDownloadPDF={handleDownloadPDF}
                     onPrint={handleSafePrint}
-                    onPrintPreview={() => setIsPrintPreviewOpen(true)}
+                    onPrintPreview={handleOpenPrintPreview}
                     saveStatusMessage="Saved to browser"
                     onOpenArchitecturalPortal={() => setPortalMode('architectural')}
                     onOpenStructuralPortal={() => setPortalMode('structural')}
@@ -1890,7 +1896,7 @@ export default function App() {
             onImportInvoice={handleImportInvoice}
             onOpenPrintPreview={() => {
               setIsExportModalOpen(false);
-              setIsPrintPreviewOpen(true);
+              handleOpenPrintPreview();
             }}
           />
         )}
@@ -1899,8 +1905,12 @@ export default function App() {
         {activeInvoice && (
           <PrintPreviewModal
             isOpen={isPrintPreviewOpen}
-            onClose={() => setIsPrintPreviewOpen(false)}
+            onClose={() => {
+              setIsPrintPreviewOpen(false);
+              setPrintPreviewFilter(undefined);
+            }}
             invoice={activeInvoice}
+            initialPackageFilter={printPreviewFilter}
           />
         )}
 

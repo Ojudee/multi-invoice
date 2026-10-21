@@ -5,6 +5,7 @@ import {
   PackageFilterPreset,
   FloorItem,
   AddonService,
+  PackageType,
 } from '../types';
 import {
   ARCHITECTURAL_PACKAGES,
@@ -92,6 +93,73 @@ export const PACKAGE_PRESETS: Record<PackageFilterPreset, PackageSelectionMap> =
 };
 
 /**
+ * Helper functions to classify floors by discipline
+ */
+export function isBOQFloor(f: FloorItem): boolean {
+  const name = (f.floorName || '').toLowerCase();
+  const sec = (f.sectionTitle || '').toLowerCase();
+  return (
+    name.includes('boq') ||
+    name.includes('quantities') ||
+    f.unitLabel === 'Set' ||
+    sec.includes('boq') ||
+    sec.includes('quantities')
+  );
+}
+
+export function isInspectionFloor(f: FloorItem): boolean {
+  const name = (f.floorName || '').toLowerCase();
+  const sec = (f.sectionTitle || '').toLowerCase();
+  return (
+    name.includes('inspection') ||
+    name.includes('visit') ||
+    name.includes('audit') ||
+    f.unitLabel === 'Visit' ||
+    sec.includes('inspection')
+  );
+}
+
+export function isStructuralFloor(f: FloorItem): boolean {
+  const name = (f.floorName || '').toLowerCase();
+  const sec = (f.sectionTitle || '').toLowerCase();
+  return (
+    name.includes('structural') ||
+    name.includes('foundation') ||
+    name.includes('bbs') ||
+    sec.includes('structural')
+  );
+}
+
+export function isArchitecturalFloor(f: FloorItem): boolean {
+  return !isStructuralFloor(f) && !isBOQFloor(f) && !isInspectionFloor(f);
+}
+
+export function getInvoiceDiscipline(
+  invoice?: Invoice | null
+): 'architectural' | 'structural' | 'boq' | 'inspection' | 'multi_package' {
+  if (!invoice) return 'architectural';
+  if (invoice.invoiceCategory) return invoice.invoiceCategory;
+  const num = (invoice.invoiceNumber || '').toUpperCase();
+  if (num.includes('BOQ')) return 'boq';
+  if (num.includes('INS')) return 'inspection';
+  if (num.includes('STR')) return 'structural';
+  if (num.includes('PKG')) return 'multi_package';
+  if (num.includes('ARC')) return 'architectural';
+
+  const floors = invoice.floors || [];
+  if (floors.length > 0) {
+    if (floors.every(isBOQFloor)) return 'boq';
+    if (floors.every(isInspectionFloor)) return 'inspection';
+    if (floors.every(isStructuralFloor)) return 'structural';
+  }
+  return 'architectural';
+}
+
+export function isSinglePackageInvoice(invoice?: Invoice | null): boolean {
+  return getInvoiceDiscipline(invoice) !== 'multi_package';
+}
+
+/**
  * Extracts or synthesizes a complete InvoicePackagesConfig for any invoice
  */
 export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePackagesConfig {
@@ -138,6 +206,12 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
     };
   }
 
+  const discipline = getInvoiceDiscipline(invoice);
+  const isDedicatedBOQ = discipline === 'boq';
+  const isDedicatedInspection = discipline === 'inspection';
+  const isDedicatedStructural = discipline === 'structural';
+  const isDedicatedArchitectural = discipline === 'architectural';
+
   const totalFloorArea = (invoice.floors || []).reduce((sum, f) => sum + (Number(f.area) || 0), 0) || 150;
 
   const boqFeatures =
@@ -155,9 +229,22 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
 
   // Check if existing config is present
   if (invoice.packagesConfig) {
+    const archEnabled = isDedicatedBOQ || isDedicatedInspection || isDedicatedStructural
+      ? false
+      : (invoice.packagesConfig.architectural?.enabled ?? true);
+    const structEnabled = isDedicatedBOQ || isDedicatedInspection || isDedicatedArchitectural
+      ? false
+      : (invoice.packagesConfig.structural?.enabled ?? isDedicatedStructural);
+    const boqEnabled = isDedicatedInspection || isDedicatedStructural || isDedicatedArchitectural
+      ? false
+      : (invoice.packagesConfig.boq?.enabled ?? isDedicatedBOQ);
+    const inspectEnabled = isDedicatedBOQ || isDedicatedStructural || isDedicatedArchitectural
+      ? false
+      : (invoice.packagesConfig.inspection?.enabled ?? isDedicatedInspection);
+
     return {
       architectural: {
-        enabled: invoice.packagesConfig.architectural?.enabled ?? true,
+        enabled: archEnabled,
         tier: invoice.packagesConfig.architectural?.tier ?? invoice.packageType ?? 'premium',
         rate: invoice.packagesConfig.architectural?.rate ?? invoice.packageRate ?? 100,
         area: invoice.packagesConfig.architectural?.area ?? totalFloorArea,
@@ -169,7 +256,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
             : ARCHITECTURAL_PACKAGES.premium.features),
       },
       structural: {
-        enabled: invoice.packagesConfig.structural?.enabled ?? false,
+        enabled: structEnabled,
         tier: invoice.packagesConfig.structural?.tier ?? 'premium',
         rate: invoice.packagesConfig.structural?.rate ?? 85,
         area: invoice.packagesConfig.structural?.area ?? totalFloorArea,
@@ -181,7 +268,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
             : STRUCTURAL_PACKAGES.premium.features),
       },
       boq: {
-        enabled: invoice.packagesConfig.boq?.enabled ?? false,
+        enabled: boqEnabled,
         tier: invoice.packagesConfig.boq?.tier ?? 'regular',
         fee: invoice.packagesConfig.boq?.fee ?? getBOQPackageFee(totalFloorArea, 'regular'),
         areaRange: invoice.packagesConfig.boq?.areaRange ?? defaultBoqRange,
@@ -189,7 +276,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
         deliverables: invoice.packagesConfig.boq?.deliverables ?? boqFeatures,
       },
       inspection: {
-        enabled: invoice.packagesConfig.inspection?.enabled ?? false,
+        enabled: inspectEnabled,
         tier: invoice.packagesConfig.inspection?.tier ?? 'standard',
         fee: invoice.packagesConfig.inspection?.fee ?? SITE_INSPECTION_PACKAGE.fixedFee,
         consultationTitle:
@@ -210,9 +297,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
   }
 
   // Auto-detect packages from floors & addons if legacy invoice
-  const hasStructuralFloor = (invoice.floors || []).some((f) =>
-    f.floorName.toLowerCase().includes('structural')
-  );
+  const hasStructuralFloor = (invoice.floors || []).some(isStructuralFloor);
   const boqAddon = (invoice.addons || []).find(
     (a) => a.enabled && (a.name.toLowerCase().includes('boq') || a.name.toLowerCase().includes('quantities'))
   );
@@ -220,17 +305,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
     (a) => a.enabled && a.name.toLowerCase().includes('inspection')
   );
 
-  const isDedicatedBOQ =
-    (invoice.invoiceNumber || '').includes('BOQ') ||
-    (invoice.floors || []).some((f) => f.floorName.toLowerCase().includes('boq'));
-  const isDedicatedInspection =
-    (invoice.invoiceNumber || '').includes('INS') ||
-    (invoice.floors || []).some((f) => f.floorName.toLowerCase().includes('inspection'));
-  const isDedicatedStructural =
-    (invoice.invoiceNumber || '').includes('STR') ||
-    (hasStructuralFloor && (invoice.floors || []).every((f) => f.floorName.toLowerCase().includes('structural')));
-
-  const archEnabled = !(isDedicatedBOQ || isDedicatedInspection || isDedicatedStructural);
+  const archEnabled = isDedicatedArchitectural || (!isDedicatedBOQ && !isDedicatedInspection && !isDedicatedStructural);
 
   return {
     architectural: {
@@ -245,7 +320,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
           : [...ARCHITECTURAL_PACKAGES.premium.features],
     },
     structural: {
-      enabled: hasStructuralFloor || isDedicatedStructural,
+      enabled: isDedicatedStructural || (!isDedicatedBOQ && !isDedicatedInspection && hasStructuralFloor),
       tier: 'premium',
       rate: 85,
       area: totalFloorArea,
@@ -253,7 +328,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
       deliverables: [...STRUCTURAL_PACKAGES.premium.features],
     },
     boq: {
-      enabled: !!boqAddon || isDedicatedBOQ,
+      enabled: isDedicatedBOQ || (!isDedicatedStructural && !isDedicatedInspection && !isDedicatedArchitectural && !!boqAddon),
       tier: 'regular',
       fee: boqAddon ? boqAddon.amount : getBOQPackageFee(totalFloorArea, 'regular'),
       areaRange: defaultBoqRange,
@@ -261,7 +336,7 @@ export function getInvoicePackagesConfig(invoice?: Invoice | null): InvoicePacka
       deliverables: [...boqFeatures],
     },
     inspection: {
-      enabled: !!inspectionAddon || isDedicatedInspection,
+      enabled: isDedicatedInspection || (!isDedicatedBOQ && !isDedicatedStructural && !isDedicatedArchitectural && !!inspectionAddon),
       tier: 'standard',
       fee: inspectionAddon ? inspectionAddon.amount : SITE_INSPECTION_PACKAGE.fixedFee,
       consultationTitle: 'SITE INSPECTION & TECHNICAL CONSULTATION',
@@ -434,18 +509,37 @@ export function filterInvoiceForPackages(
 } {
   const config = getInvoicePackagesConfig(invoice);
   const { packages, totalArea } = getPackageSummaries(invoice);
+  const invoiceDiscipline = getInvoiceDiscipline(invoice);
+  const isInvoiceSingle = isSinglePackageInvoice(invoice);
 
-  const selectedKeys = (Object.keys(selection) as (keyof PackageSelectionMap)[]).filter(
-    (k) => selection[k]
+  // If the invoice is a single package invoice, strictly restrict selection to its own package
+  let effectiveSelection = { ...selection };
+  if (isInvoiceSingle) {
+    effectiveSelection = {
+      architectural: invoiceDiscipline === 'architectural',
+      structural: invoiceDiscipline === 'structural',
+      boq: invoiceDiscipline === 'boq',
+      inspection: invoiceDiscipline === 'inspection',
+      addons: false,
+    };
+  }
+
+  const selectedKeys = (Object.keys(effectiveSelection) as (keyof PackageSelectionMap)[]).filter(
+    (k) => effectiveSelection[k]
   );
 
-  const isSinglePackage = selectedKeys.length === 1;
-  const singlePackageKey = isSinglePackage ? selectedKeys[0] : undefined;
-  const selectedNames = selectedKeys.map((k) => packages[k].title);
+  const isSinglePackage = isInvoiceSingle || selectedKeys.length === 1;
+  const singlePackageKey: keyof PackageSelectionMap | undefined = isInvoiceSingle
+    ? invoiceDiscipline === 'multi_package' ? undefined : invoiceDiscipline
+    : selectedKeys.length === 1 ? selectedKeys[0] : undefined;
+
+  const selectedNames = isInvoiceSingle && singlePackageKey
+    ? [packages[singlePackageKey].title]
+    : selectedKeys.map((k) => packages[k].title);
 
   // Determine banner title
   let bannerTitle = invoice.company.bannerTitle || 'ARCHITECTURAL & ENGINEERING SERVICES';
-  if (isSinglePackage) {
+  if (isSinglePackage && singlePackageKey) {
     if (singlePackageKey === 'architectural') {
       bannerTitle = 'ARCHITECTURAL DRAWING PACKAGE';
     } else if (singlePackageKey === 'structural') {
@@ -458,11 +552,11 @@ export function filterInvoiceForPackages(
       bannerTitle = 'ADDITIONAL ENGINEERING DELIVERABLES';
     }
   } else if (selectedKeys.length === 2) {
-    if (selection.architectural && selection.structural) {
+    if (effectiveSelection.architectural && effectiveSelection.structural) {
       bannerTitle = 'ARCHITECTURAL & STRUCTURAL ENGINEERING SERVICES';
-    } else if (selection.architectural && selection.boq) {
+    } else if (effectiveSelection.architectural && effectiveSelection.boq) {
       bannerTitle = 'ARCHITECTURAL DESIGN & BOQ SERVICES';
-    } else if (selection.structural && selection.boq) {
+    } else if (effectiveSelection.structural && effectiveSelection.boq) {
       bannerTitle = 'STRUCTURAL ENGINEERING & BOQ SERVICES';
     } else {
       bannerTitle = `${packages[selectedKeys[0]].title.split(' ')[0]} & ${packages[selectedKeys[1]].title.split(' ')[0]} SERVICES`;
@@ -473,147 +567,240 @@ export function filterInvoiceForPackages(
 
   // Build floors table for selected packages
   const newFloors: FloorItem[] = [];
-
-  // 1. Architectural floors
-  if (selection.architectural) {
-    const archFloors = (invoice.floors || []).filter(
-      (f) => !f.floorName.toLowerCase().includes('structural')
-    );
-
-    if (archFloors.length > 0) {
-      archFloors.forEach((f, idx) => {
-        newFloors.push({
-          id: f.id,
-          sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : undefined,
-          floorName: selectedKeys.length > 1 ? `[Architectural] ${f.floorName}` : f.floorName,
-          area: Number(f.area) || 0,
-          customRate: f.customRate ?? config.architectural.rate,
-          areaLabel: `${(Number(f.area) || 0).toFixed(1)} ${invoice.unit}`,
-          rateLabel: `${f.customRate ?? config.architectural.rate} / ${invoice.unit}`,
-        });
-      });
-    } else {
-      newFloors.push({
-        id: 'arch-default-floor',
-        sectionTitle: selectedKeys.length > 1 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : undefined,
-        floorName: selectedKeys.length > 1 ? '[Architectural] Covered Floor Area' : 'Architectural Floor Design Scope',
-        area: totalArea,
-        customRate: config.architectural.rate,
-        areaLabel: `${totalArea.toFixed(1)} ${invoice.unit}`,
-        rateLabel: `${config.architectural.rate} / ${invoice.unit}`,
-      });
-    }
-  }
-
-  // 2. Structural floors
-  if (selection.structural) {
-    const structArea = config.structural.area ?? totalArea;
-    const structRate = config.structural.rate || 85;
-    const structFeatures =
-      config.structural.tier === 'premium'
-        ? STRUCTURAL_PACKAGES.premium.features
-        : STRUCTURAL_PACKAGES.regular.features;
-
-    // Check if original invoice had detailed structural floors
-    const existingStructFloors = (invoice.floors || []).filter((f) =>
-      f.floorName.toLowerCase().includes('structural')
-    );
-
-    if (existingStructFloors.length > 0) {
-      existingStructFloors.forEach((f, idx) => {
-        newFloors.push({
-          id: f.id,
-          sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'STRUCTURAL ENGINEERING DRAWING SCHEDULE' : undefined,
-          floorName: selectedKeys.length > 1 ? `[Structural] ${f.floorName}` : f.floorName,
-          area: Number(f.area) || structArea,
-          customRate: f.customRate ?? structRate,
-          areaLabel: `${(Number(f.area) || structArea).toFixed(1)} ${invoice.unit}`,
-          rateLabel: `${f.customRate ?? structRate} / ${invoice.unit}`,
-        });
-      });
-    } else {
-      newFloors.push({
-        id: 'struct-scope-floor',
-        sectionTitle: selectedKeys.length > 1 ? 'STRUCTURAL ENGINEERING DRAWING SCHEDULE' : undefined,
-        floorName:
-          selectedKeys.length > 1
-            ? `[Structural Engineering] Layouts, Foundation, Columns, Beams & BBS (${config.structural.tier.toUpperCase()})`
-            : `Structural Engineering Scope - Foundation, Beams, Columns, Slabs & BBS (${config.structural.tier.toUpperCase()})`,
-        area: structArea,
-        customRate: structRate,
-        areaLabel: `${structArea.toFixed(1)} ${invoice.unit}`,
-        rateLabel: `${structRate} / ${invoice.unit}`,
-        amountOverride: Math.round(structArea * structRate),
-        deliverables: config.structural.deliverables || structFeatures,
-      });
-    }
-  }
-
-  // 3. BOQ Schedule Item (Reflecting Fixed Range Charge Rate instead of floor area)
   const newAddons: AddonService[] = [];
 
-  if (selection.boq) {
-    const boqFee = config.boq.fee || getBOQPackageFee(totalArea, config.boq.tier === 'premium' ? 'premium' : 'regular');
-    const defaultBoqRange =
-      totalArea <= 500
-        ? '100 Sq.m - 500 Sq.m'
-        : totalArea <= 1000
-        ? '500 Sq.m - 1,000 Sq.m'
-        : '1,000 Sq.m plus';
-    const boqRange = config.boq.areaRange || defaultBoqRange;
-    const boqFeatures =
-      config.boq.tier === 'premium'
-        ? BOQ_PACKAGES.premium.features
-        : BOQ_PACKAGES.regular.features;
-    const deliverables = config.boq.deliverables || boqFeatures;
+  // CASE 1: Single package invoice — directly preserve invoice's own line items
+  if (isInvoiceSingle && singlePackageKey) {
+    if (invoice.floors && invoice.floors.length > 0) {
+      invoice.floors.forEach((f) => {
+        newFloors.push({ ...f });
+      });
+    } else {
+      // Fallback synthesis if floors empty
+      if (singlePackageKey === 'boq') {
+        const boqFee = config.boq.fee || getBOQPackageFee(totalArea, 'regular');
+        newFloors.push({
+          id: 'boq-default-item',
+          floorName: `Full Bill of Quantities (BOQ) - ${config.boq.areaRange || '100 Sq.m - 500 Sq.m'}`,
+          quantity: 1,
+          unitLabel: 'Set',
+          area: 1,
+          customRate: boqFee,
+          areaLabel: `1 Set (${config.boq.areaRange || 'Fixed Tier'})`,
+          rateLabel: `${boqFee.toLocaleString()} Fixed`,
+          amountOverride: boqFee,
+          deliverables: config.boq.deliverables,
+        });
+      } else if (singlePackageKey === 'inspection') {
+        const inspectFee = config.inspection.fee || SITE_INSPECTION_PACKAGE.fixedFee;
+        newFloors.push({
+          id: 'inspect-default-item',
+          floorName: config.inspection.consultationTitle || 'Site Inspection & Technical Consultation',
+          quantity: 1,
+          unitLabel: 'Visit',
+          area: 1,
+          customRate: inspectFee,
+          areaLabel: '1 Visit (Fixed Scope)',
+          rateLabel: `${inspectFee.toLocaleString()} / Visit`,
+          amountOverride: inspectFee,
+          deliverables: config.inspection.deliverables,
+        });
+      } else if (singlePackageKey === 'structural') {
+        newFloors.push({
+          id: 'struct-default-item',
+          floorName: `Structural Engineering Scope (${config.structural.tier.toUpperCase()})`,
+          area: totalArea,
+          customRate: config.structural.rate,
+          areaLabel: `${totalArea.toFixed(1)} ${invoice.unit}`,
+          rateLabel: `${config.structural.rate} / ${invoice.unit}`,
+          amountOverride: Math.round(totalArea * config.structural.rate),
+          deliverables: config.structural.deliverables,
+        });
+      } else {
+        newFloors.push({
+          id: 'arch-default-item',
+          floorName: `Architectural Design Scope (${config.architectural.tier.toUpperCase()})`,
+          area: totalArea,
+          customRate: config.architectural.rate,
+          areaLabel: `${totalArea.toFixed(1)} ${invoice.unit}`,
+          rateLabel: `${config.architectural.rate} / ${invoice.unit}`,
+          amountOverride: Math.round(totalArea * config.architectural.rate),
+          deliverables: config.architectural.deliverables,
+        });
+      }
+    }
+  } else {
+    // CASE 2: Multi-package invoice — filter selectively by discipline
 
-    newFloors.push({
-      id: 'boq-schedule-item',
-      sectionTitle: selectedKeys.length > 1 ? 'BILLS OF QUANTITIES (BOQ) SCHEDULE' : undefined,
-      floorName: `Bills of Quantities (BOQ) - ${config.boq.tier.toUpperCase()} PACKAGE`,
-      area: 0,
-      areaLabel: `${boqRange} (Fixed Range Tier)`,
-      customRate: boqFee,
-      rateLabel: `${formatCurrency(boqFee, invoice.currency)} Fixed Tier Rate`,
-      amountOverride: boqFee,
-      deliverables,
-    });
-  }
+    // 1. Architectural floors (strictly exclude structural, BOQ, and inspection)
+    if (effectiveSelection.architectural) {
+      const archFloors = (invoice.floors || []).filter(isArchitecturalFloor);
 
-  // 4. Site Inspection Schedule Item (Reflecting Fixed Inspection Rate)
-  if (selection.inspection) {
-    const fee = config.inspection.fee || SITE_INSPECTION_PACKAGE.fixedFee;
-    const title = config.inspection.consultationTitle || 'Site Inspection & Technical Consultation';
-    const scope = config.inspection.inspectionScope || 'On-Site Field Visit & Terrain Assessment';
-    const services = config.inspection.servicesList || SITE_INSPECTION_PACKAGE.includes;
-    const officialDeliverables = config.inspection.officialDeliverables || SITE_INSPECTION_PACKAGE.officialDeliverables;
+      if (archFloors.length > 0) {
+        archFloors.forEach((f, idx) => {
+          newFloors.push({
+            id: f.id,
+            sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : f.sectionTitle,
+            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[Architectural]') ? `[Architectural] ${f.floorName}` : f.floorName,
+            area: Number(f.area) || 0,
+            quantity: f.quantity,
+            unitLabel: f.unitLabel,
+            customRate: f.customRate ?? config.architectural.rate,
+            areaLabel: f.areaLabel || `${(Number(f.area) || 0).toFixed(1)} ${invoice.unit}`,
+            rateLabel: f.rateLabel || `${f.customRate ?? config.architectural.rate} / ${invoice.unit}`,
+            amountOverride: f.amountOverride,
+            deliverables: f.deliverables,
+          });
+        });
+      } else {
+        newFloors.push({
+          id: 'arch-default-floor',
+          sectionTitle: selectedKeys.length > 1 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : undefined,
+          floorName: selectedKeys.length > 1 ? '[Architectural] Covered Floor Area' : 'Architectural Floor Design Scope',
+          area: totalArea,
+          customRate: config.architectural.rate,
+          areaLabel: `${totalArea.toFixed(1)} ${invoice.unit}`,
+          rateLabel: `${config.architectural.rate} / ${invoice.unit}`,
+          deliverables: config.architectural.deliverables,
+        });
+      }
+    }
 
-    newFloors.push({
-      id: 'inspect-schedule-item',
-      sectionTitle: selectedKeys.length > 1 ? 'SITE INSPECTION & REPORTS SCHEDULE' : undefined,
-      floorName: title,
-      area: 0,
-      areaLabel: `${scope} (Fixed Scope)`,
-      customRate: fee,
-      rateLabel: `${formatCurrency(fee, invoice.currency)} Fixed Rate`,
-      amountOverride: fee,
-      deliverables: [...services, ...officialDeliverables],
-    });
-  }
+    // 2. Structural floors
+    if (effectiveSelection.structural) {
+      const structArea = config.structural.area ?? totalArea;
+      const structRate = config.structural.rate || 85;
+      const structFeatures =
+        config.structural.tier === 'premium'
+          ? STRUCTURAL_PACKAGES.premium.features
+          : STRUCTURAL_PACKAGES.regular.features;
 
-  // 5. Other Addon services
-  if (selection.addons) {
-    const otherAddons = (invoice.addons || []).filter((a) => {
-      if (!a.enabled) return false;
-      const n = a.name.toLowerCase();
-      if (n.includes('boq') || n.includes('quantities')) return false;
-      if (n.includes('inspection')) return false;
-      return true;
-    });
+      const existingStructFloors = (invoice.floors || []).filter(isStructuralFloor);
 
-    otherAddons.forEach((a) => {
-      newAddons.push({ ...a });
-    });
+      if (existingStructFloors.length > 0) {
+        existingStructFloors.forEach((f, idx) => {
+          newFloors.push({
+            id: f.id,
+            sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'STRUCTURAL ENGINEERING DRAWING SCHEDULE' : f.sectionTitle,
+            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[Structural]') ? `[Structural] ${f.floorName}` : f.floorName,
+            area: Number(f.area) || structArea,
+            quantity: f.quantity,
+            unitLabel: f.unitLabel,
+            customRate: f.customRate ?? structRate,
+            areaLabel: f.areaLabel || `${(Number(f.area) || structArea).toFixed(1)} ${invoice.unit}`,
+            rateLabel: f.rateLabel || `${f.customRate ?? structRate} / ${invoice.unit}`,
+            amountOverride: f.amountOverride,
+            deliverables: f.deliverables,
+          });
+        });
+      } else {
+        newFloors.push({
+          id: 'struct-scope-floor',
+          sectionTitle: selectedKeys.length > 1 ? 'STRUCTURAL ENGINEERING DRAWING SCHEDULE' : undefined,
+          floorName:
+            selectedKeys.length > 1
+              ? `[Structural Engineering] Layouts, Foundation, Columns, Beams & BBS (${config.structural.tier.toUpperCase()})`
+              : `Structural Engineering Scope - Foundation, Beams, Columns, Slabs & BBS (${config.structural.tier.toUpperCase()})`,
+          area: structArea,
+          customRate: structRate,
+          areaLabel: `${structArea.toFixed(1)} ${invoice.unit}`,
+          rateLabel: `${structRate} / ${invoice.unit}`,
+          amountOverride: Math.round(structArea * structRate),
+          deliverables: config.structural.deliverables || structFeatures,
+        });
+      }
+    }
+
+    // 3. BOQ Schedule Item
+    if (effectiveSelection.boq) {
+      const existingBOQFloors = (invoice.floors || []).filter(isBOQFloor);
+      if (existingBOQFloors.length > 0) {
+        existingBOQFloors.forEach((f, idx) => {
+          newFloors.push({
+            ...f,
+            sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'BILLS OF QUANTITIES (BOQ) SCHEDULE' : f.sectionTitle,
+            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[BOQ]') ? `[BOQ] ${f.floorName}` : f.floorName,
+          });
+        });
+      } else {
+        const boqFee = config.boq.fee || getBOQPackageFee(totalArea, config.boq.tier === 'premium' ? 'premium' : 'regular');
+        const defaultBoqRange =
+          totalArea <= 500
+            ? '100 Sq.m - 500 Sq.m'
+            : totalArea <= 1000
+            ? '500 Sq.m - 1,000 Sq.m'
+            : '1,000 Sq.m plus';
+        const boqRange = config.boq.areaRange || defaultBoqRange;
+        const boqFeatures =
+          config.boq.tier === 'premium'
+            ? BOQ_PACKAGES.premium.features
+            : BOQ_PACKAGES.regular.features;
+        const deliverables = config.boq.deliverables || boqFeatures;
+
+        newFloors.push({
+          id: 'boq-schedule-item',
+          sectionTitle: selectedKeys.length > 1 ? 'BILLS OF QUANTITIES (BOQ) SCHEDULE' : undefined,
+          floorName: `Bills of Quantities (BOQ) - ${config.boq.tier.toUpperCase()} PACKAGE`,
+          quantity: 1,
+          unitLabel: 'Set',
+          area: 1,
+          areaLabel: `${boqRange} (Fixed Range Tier)`,
+          customRate: boqFee,
+          rateLabel: `${formatCurrency(boqFee, invoice.currency)} Fixed Tier Rate`,
+          amountOverride: boqFee,
+          deliverables,
+        });
+      }
+    }
+
+    // 4. Site Inspection Schedule Item
+    if (effectiveSelection.inspection) {
+      const existingInspectFloors = (invoice.floors || []).filter(isInspectionFloor);
+      if (existingInspectFloors.length > 0) {
+        existingInspectFloors.forEach((f, idx) => {
+          newFloors.push({
+            ...f,
+            sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'SITE INSPECTION & REPORTS SCHEDULE' : f.sectionTitle,
+            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[Inspection]') ? `[Inspection] ${f.floorName}` : f.floorName,
+          });
+        });
+      } else {
+        const fee = config.inspection.fee || SITE_INSPECTION_PACKAGE.fixedFee;
+        const title = config.inspection.consultationTitle || 'Site Inspection & Technical Consultation';
+        const scope = config.inspection.inspectionScope || 'On-Site Field Visit & Terrain Assessment';
+        const services = config.inspection.servicesList || SITE_INSPECTION_PACKAGE.includes;
+        const officialDeliverables = config.inspection.officialDeliverables || SITE_INSPECTION_PACKAGE.officialDeliverables;
+
+        newFloors.push({
+          id: 'inspect-schedule-item',
+          sectionTitle: selectedKeys.length > 1 ? 'SITE INSPECTION & REPORTS SCHEDULE' : undefined,
+          floorName: title,
+          quantity: 1,
+          unitLabel: 'Visit',
+          area: 1,
+          areaLabel: `${scope} (Fixed Scope)`,
+          customRate: fee,
+          rateLabel: `${formatCurrency(fee, invoice.currency)} Fixed Rate`,
+          amountOverride: fee,
+          deliverables: [...services, ...officialDeliverables],
+        });
+      }
+    }
+
+    // 5. Other Addon services
+    if (effectiveSelection.addons) {
+      const otherAddons = (invoice.addons || []).filter((a) => {
+        if (!a.enabled) return false;
+        const n = a.name.toLowerCase();
+        if (n.includes('boq') || n.includes('quantities')) return false;
+        if (n.includes('inspection')) return false;
+        return true;
+      });
+
+      otherAddons.forEach((a) => {
+        newAddons.push({ ...a });
+      });
+    }
   }
 
   // Ensure at least one line item exists
@@ -632,6 +819,10 @@ export function filterInvoiceForPackages(
       ? config.structural.rate
       : singlePackageKey === 'architectural'
       ? config.architectural.rate
+      : singlePackageKey === 'boq'
+      ? config.boq.fee
+      : singlePackageKey === 'inspection'
+      ? config.inspection.fee
       : invoice.packageRate;
 
   const primaryType =
@@ -639,6 +830,10 @@ export function filterInvoiceForPackages(
       ? config.structural.tier
       : singlePackageKey === 'architectural'
       ? config.architectural.tier
+      : singlePackageKey === 'boq'
+      ? config.boq.tier
+      : singlePackageKey === 'inspection'
+      ? config.inspection.tier
       : invoice.packageType;
 
   // Custom notes tailored to selected packages
@@ -646,18 +841,22 @@ export function filterInvoiceForPackages(
   if (isSinglePackage) {
     if (singlePackageKey === 'architectural') {
       notes =
+        invoice.additionalNotes ||
         config.architectural.notes ||
         `Architectural Drawing Package (${config.architectural.tier.toUpperCase()}). Includes 3D Exterior Visualization, floor plans, elevations, sections, and permit-ready municipal drawing sets.`;
     } else if (singlePackageKey === 'structural') {
       notes =
+        invoice.additionalNotes ||
         config.structural.notes ||
         `Structural Engineering Package (${config.structural.tier.toUpperCase()}). Includes foundation design, column/beam schedules, structural calculations, and Bar Bending Schedule (BBS).`;
     } else if (singlePackageKey === 'boq') {
       notes =
+        invoice.additionalNotes ||
         config.boq.notes ||
         `Bills of Quantities (BOQ) - ${config.boq.tier.toUpperCase()} Package. Includes quantity takeoff, material breakdown, labor cost estimates, and municipal tender schedules.`;
     } else if (singlePackageKey === 'inspection') {
       notes =
+        invoice.additionalNotes ||
         config.inspection.notes ||
         'Site Inspection & Technical Consultation. Includes on-site field assessment, soil/site notes, sketch plans, and formal engineering report.';
     }
@@ -672,7 +871,7 @@ export function filterInvoiceForPackages(
     floors: newFloors,
     addons: newAddons,
     packageRate: primaryRate,
-    packageType: primaryType,
+    packageType: (primaryType as PackageType) || invoice.packageType || 'regular',
     additionalNotes: notes,
   };
 

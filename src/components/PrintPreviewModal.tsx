@@ -22,6 +22,8 @@ import {
   PACKAGE_PRESETS,
   filterInvoiceForPackages,
   getPackageSummaries,
+  getInvoiceDiscipline,
+  isSinglePackageInvoice,
 } from '../utils/packageManager';
 import { formatCurrency, calculateInvoice } from '../utils/calculations';
 
@@ -47,17 +49,44 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
   const [showMargins, setShowMargins] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
 
+  // Discipline & Single-package restrictions
+  const invoiceDiscipline = getInvoiceDiscipline(invoice);
+  const isInvoiceSingle = isSinglePackageInvoice(invoice);
+  const singlePreset: PackageFilterPreset =
+    invoiceDiscipline === 'boq'
+      ? 'boq'
+      : invoiceDiscipline === 'inspection'
+      ? 'inspection'
+      : invoiceDiscipline === 'structural'
+      ? 'structural'
+      : 'architectural';
+
   // Package Filter State for single-package and custom multi-package printing
   const [packageFilter, setPackageFilter] = useState<PackageSelectionMap>(() => {
+    if (isInvoiceSingle) {
+      return PACKAGE_PRESETS[singlePreset];
+    }
     if (initialPackageFilter) return initialPackageFilter;
     if (invoice.activePrintFilter) return invoice.activePrintFilter;
     return PACKAGE_PRESETS.all;
   });
   const [activePreset, setActivePreset] = useState<PackageFilterPreset>(() => {
+    if (isInvoiceSingle) return singlePreset;
     if (initialPackageFilter) return 'custom';
     return 'all';
   });
   const [showCustomCombine, setShowCustomCombine] = useState(false);
+
+  // Sync packageFilter whenever invoice or discipline changes
+  useEffect(() => {
+    if (isInvoiceSingle) {
+      setPackageFilter(PACKAGE_PRESETS[singlePreset]);
+      setActivePreset(singlePreset);
+    } else if (initialPackageFilter) {
+      setPackageFilter(initialPackageFilter);
+      setActivePreset('custom');
+    }
+  }, [invoice.id, invoiceDiscipline, isInvoiceSingle, initialPackageFilter, singlePreset]);
 
   // Derived filtered invoice & package stats
   const { packages: allPkgSummaries, activeCount, grandTotal } = getPackageSummaries(invoice);
@@ -443,92 +472,157 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
         Allows printing one package at a time or combining any selection
         =======================================================================
       */}
+      {/* 
+        =======================================================================
+        PACKAGE PRINT SELECTOR & COMBINATION BAR
+        For single-discipline invoices: strictly restricted to this invoice's package.
+        For multi-package invoices: allows printing one package at a time or combining.
+        =======================================================================
+      */}
       <div className="bg-slate-900/95 border-b border-slate-800 px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-2.5 shrink-0 z-20 shadow-md">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
-            <Sparkles className="w-3.5 h-3.5" />
-            Print Package:
-          </span>
+        {isInvoiceSingle ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+              <Sparkles className="w-3.5 h-3.5" />
+              Discipline Studio:
+            </span>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-slate-800/90 border border-amber-500/40 text-xs font-semibold text-white shadow-xs">
+              {invoiceDiscipline === 'boq' && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span>📊</span>
+                    <span>Bills of Quantities (BOQ) Studio</span>
+                  </span>
+                  <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-2 py-0.5 rounded font-mono font-bold tracking-wide">
+                    SINGLE PACKAGE • BOQ SCOPE ONLY
+                  </span>
+                </>
+              )}
+              {invoiceDiscipline === 'inspection' && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span>🔍</span>
+                    <span>Site Inspection & Technical Consultation</span>
+                  </span>
+                  <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded font-mono font-bold tracking-wide">
+                    SINGLE PACKAGE • INSPECTION SCOPE ONLY
+                  </span>
+                </>
+              )}
+              {invoiceDiscipline === 'structural' && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span>🏗️</span>
+                    <span>Structural Engineering Drawing Studio</span>
+                  </span>
+                  <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-500/50 px-2 py-0.5 rounded font-mono font-bold tracking-wide">
+                    SINGLE PACKAGE • STRUCTURAL SCOPE ONLY
+                  </span>
+                </>
+              )}
+              {invoiceDiscipline === 'architectural' && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span>🏛️</span>
+                    <span>Architectural Drawing Studio</span>
+                  </span>
+                  <span className="text-[10px] bg-blue-950 text-blue-300 border border-blue-500/50 px-2 py-0.5 rounded font-mono font-bold tracking-wide">
+                    SINGLE PACKAGE • ARCHITECTURAL SCOPE ONLY
+                  </span>
+                </>
+              )}
+            </div>
+            <span className="text-[11px] text-slate-400 italic hidden sm:inline">
+              (Preview restricted strictly to this invoice's package deliverables)
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+              <Sparkles className="w-3.5 h-3.5" />
+              Print Package:
+            </span>
 
-          {/* Preset: All Included Packages */}
-          <button
-            type="button"
-            onClick={() => handleSelectPreset('all')}
-            className={`px-3 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activePreset === 'all'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-xs ring-1 ring-amber-300'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            <span>🌟 All Included ({activeCount})</span>
-          </button>
+            {/* Preset: All Included Packages */}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset('all')}
+              className={`px-3 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activePreset === 'all'
+                  ? 'bg-amber-400 text-slate-950 font-bold shadow-xs ring-1 ring-amber-300'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <span>🌟 All Included ({activeCount})</span>
+            </button>
 
-          {/* Preset: Architectural Package */}
-          <button
-            type="button"
-            onClick={() => handleSelectPreset('architectural')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-              activePreset === 'architectural'
-                ? 'bg-blue-600 text-white font-bold shadow-xs ring-1 ring-blue-400'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            <span>🏛️ Arch Package</span>
-          </button>
+            {/* Preset: Architectural Package */}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset('architectural')}
+              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                activePreset === 'architectural'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs ring-1 ring-blue-400'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <span>🏛️ Arch Package</span>
+            </button>
 
-          {/* Preset: Structural Package */}
-          <button
-            type="button"
-            onClick={() => handleSelectPreset('structural')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-              activePreset === 'structural'
-                ? 'bg-indigo-600 text-white font-bold shadow-xs ring-1 ring-indigo-400'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            <span>🏗️ Structural Package</span>
-          </button>
+            {/* Preset: Structural Package */}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset('structural')}
+              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                activePreset === 'structural'
+                  ? 'bg-indigo-600 text-white font-bold shadow-xs ring-1 ring-indigo-400'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <span>🏗️ Structural Package</span>
+            </button>
 
-          {/* Preset: BOQ Package */}
-          <button
-            type="button"
-            onClick={() => handleSelectPreset('boq')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-              activePreset === 'boq'
-                ? 'bg-emerald-600 text-white font-bold shadow-xs ring-1 ring-emerald-400'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            <span>📊 BOQ Package</span>
-          </button>
+            {/* Preset: BOQ Package */}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset('boq')}
+              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                activePreset === 'boq'
+                  ? 'bg-emerald-600 text-white font-bold shadow-xs ring-1 ring-emerald-400'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <span>📊 BOQ Package</span>
+            </button>
 
-          {/* Preset: Site Inspection Package */}
-          <button
-            type="button"
-            onClick={() => handleSelectPreset('inspection')}
-            className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-              activePreset === 'inspection'
-                ? 'bg-amber-600 text-white font-bold shadow-xs ring-1 ring-amber-400'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-          >
-            <span>🔍 Inspection Package</span>
-          </button>
+            {/* Preset: Site Inspection Package */}
+            <button
+              type="button"
+              onClick={() => handleSelectPreset('inspection')}
+              className={`px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                activePreset === 'inspection'
+                  ? 'bg-amber-600 text-white font-bold shadow-xs ring-1 ring-amber-400'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <span>🔍 Inspection Package</span>
+            </button>
 
-          {/* Combine / Multi-Select Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowCustomCombine((prev) => !prev)}
-            className={`px-2.5 py-1 rounded text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
-              showCustomCombine || activePreset === 'custom' || activePreset === 'arch_structural' || activePreset === 'arch_boq' || activePreset === 'structural_boq'
-                ? 'bg-purple-900/70 border-purple-400 text-purple-200 ring-1 ring-purple-400/50'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-purple-400" />
-            <span>Combine Packages... {showCustomCombine ? '▲' : '▼'}</span>
-          </button>
-        </div>
+            {/* Combine / Multi-Select Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowCustomCombine((prev) => !prev)}
+              className={`px-2.5 py-1 rounded text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                showCustomCombine || activePreset === 'custom' || activePreset === 'arch_structural' || activePreset === 'arch_boq' || activePreset === 'structural_boq'
+                  ? 'bg-purple-900/70 border-purple-400 text-purple-200 ring-1 ring-purple-400/50'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-purple-400" />
+              <span>Combine Packages... {showCustomCombine ? '▲' : '▼'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Live Filter Summary Badge */}
         <div className="flex items-center gap-2">
@@ -545,8 +639,8 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
         </div>
       </div>
 
-      {/* Expandable Custom Combination Panel */}
-      {showCustomCombine && (
+      {/* Expandable Custom Combination Panel (Multi-package invoices only) */}
+      {showCustomCombine && !isInvoiceSingle && (
         <div className="bg-slate-900 border-b border-purple-500/40 px-4 md:px-6 py-3 shrink-0 z-20 shadow-xl space-y-2.5 animate-fade-in">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5 uppercase tracking-wide">
