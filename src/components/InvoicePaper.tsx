@@ -332,7 +332,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                 const rateDisplay = floor.rateLabel || (floorRate > 0 ? floorRate.toLocaleString() : '--');
 
                 return (
-                  <React.Fragment key={floor.id || `fl-row-${idx}`}>
+                  <React.Fragment key={`${floor.id || 'fl'}-${idx}`}>
                     {floor.sectionTitle && (
                       <div className="bg-slate-100 text-slate-800 font-bold px-3 py-1 text-[10px] uppercase tracking-wider border-t border-slate-300 flex items-center justify-between">
                         <span>{floor.sectionTitle}</span>

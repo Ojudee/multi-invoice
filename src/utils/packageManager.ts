@@ -93,45 +93,60 @@ export const PACKAGE_PRESETS: Record<PackageFilterPreset, PackageSelectionMap> =
 };
 
 /**
- * Helper functions to classify floors by discipline
+ * Helper functions to classify floors by discipline with strict mutual exclusivity
  */
-export function isBOQFloor(f: FloorItem): boolean {
+export function isInspectionFloor(f: FloorItem): boolean {
+  const id = (f.id || '').toLowerCase();
   const name = (f.floorName || '').toLowerCase();
   const sec = (f.sectionTitle || '').toLowerCase();
   return (
+    id.includes('ins') ||
+    f.unitLabel === 'Visit' ||
+    name.includes('inspection') ||
+    name.includes('field visit') ||
+    name.includes('site visit') ||
+    name.includes('technical consultation') ||
+    sec.includes('inspection') ||
+    sec.includes('supervision')
+  );
+}
+
+export function isBOQFloor(f: FloorItem): boolean {
+  if (isInspectionFloor(f)) return false;
+  const id = (f.id || '').toLowerCase();
+  const name = (f.floorName || '').toLowerCase();
+  const sec = (f.sectionTitle || '').toLowerCase();
+  return (
+    id.includes('boq') ||
+    f.unitLabel === 'Set' ||
     name.includes('boq') ||
     name.includes('quantities') ||
-    f.unitLabel === 'Set' ||
+    name.includes('bill of') ||
     sec.includes('boq') ||
     sec.includes('quantities')
   );
 }
 
-export function isInspectionFloor(f: FloorItem): boolean {
-  const name = (f.floorName || '').toLowerCase();
-  const sec = (f.sectionTitle || '').toLowerCase();
-  return (
-    name.includes('inspection') ||
-    name.includes('visit') ||
-    name.includes('audit') ||
-    f.unitLabel === 'Visit' ||
-    sec.includes('inspection')
-  );
-}
-
 export function isStructuralFloor(f: FloorItem): boolean {
+  if (isInspectionFloor(f) || isBOQFloor(f)) return false;
+  const id = (f.id || '').toLowerCase();
   const name = (f.floorName || '').toLowerCase();
   const sec = (f.sectionTitle || '').toLowerCase();
   return (
+    id.includes('str') ||
     name.includes('structural') ||
-    name.includes('foundation') ||
     name.includes('bbs') ||
+    name.includes('framing') ||
+    name.includes('reinforced concrete') ||
+    name.includes('beams') ||
+    name.includes('columns') ||
+    (name.includes('foundation') && !name.includes('inspection')) ||
     sec.includes('structural')
   );
 }
 
 export function isArchitecturalFloor(f: FloorItem): boolean {
-  return !isStructuralFloor(f) && !isBOQFloor(f) && !isInspectionFloor(f);
+  return !isInspectionFloor(f) && !isBOQFloor(f) && !isStructuralFloor(f);
 }
 
 export function getInvoiceDiscipline(
@@ -862,13 +877,27 @@ export function filterInvoiceForPackages(
     }
   }
 
+  // Deduplicate and ensure guaranteed unique IDs for every floor item
+  const seenFloorIds = new Set<string>();
+  const sanitizedFloors = newFloors.map((f, idx) => {
+    let finalId = f.id || `fl-pkg-${idx}`;
+    if (seenFloorIds.has(finalId)) {
+      finalId = `${finalId}-${idx}`;
+    }
+    seenFloorIds.add(finalId);
+    return {
+      ...f,
+      id: finalId,
+    };
+  });
+
   const filteredInvoice: Invoice = {
     ...invoice,
     company: {
       ...invoice.company,
       bannerTitle,
     },
-    floors: newFloors,
+    floors: sanitizedFloors,
     addons: newAddons,
     packageRate: primaryRate,
     packageType: (primaryType as PackageType) || invoice.packageType || 'regular',
