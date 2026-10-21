@@ -12,15 +12,32 @@ export interface InvoiceCalculations {
   balanceDue: number;
 }
 
-export function calculateInvoice(invoice: Invoice): InvoiceCalculations {
+export function calculateInvoice(invoice?: Invoice | null): InvoiceCalculations {
+  if (!invoice) {
+    return {
+      totalArea: 0,
+      drawingPackageTotal: 0,
+      addonsTotal: 0,
+      subtotal: 0,
+      discountAmount: 0,
+      taxAmount: 0,
+      grandTotal: 0,
+      depositRequiredAmount: 0,
+      balanceDue: 0,
+    };
+  }
+
+  const floors = Array.isArray(invoice.floors) ? invoice.floors : [];
+  const addons = Array.isArray(invoice.addons) ? invoice.addons : [];
+
   // 1. Total Area
-  const totalArea = invoice.floors.reduce((sum, floor) => {
+  const totalArea = floors.reduce((sum, floor) => {
     const a = Number(floor.area) || 0;
     return sum + a;
   }, 0);
 
   // 2. Drawing package / service schedule total
-  const drawingPackageTotal = invoice.floors.reduce((sum, floor) => {
+  const drawingPackageTotal = floors.reduce((sum, floor) => {
     if (typeof floor.amountOverride === 'number') {
       return sum + floor.amountOverride;
     }
@@ -30,7 +47,7 @@ export function calculateInvoice(invoice: Invoice): InvoiceCalculations {
   }, 0);
 
   // 3. Addon services total
-  const addonsTotal = (invoice.addons || [])
+  const addonsTotal = addons
     .filter(a => a.enabled)
     .reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
 

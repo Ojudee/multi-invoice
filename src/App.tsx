@@ -263,7 +263,7 @@ export default function App() {
   }, [invoices]);
 
   const activeInvoice =
-    invoices.find((inv) => inv.id === activeInvoiceId) || invoices[0];
+    invoices.find((inv) => inv.id === activeInvoiceId) || invoices[0] || INITIAL_INVOICES[0];
 
   const handleUpdateActiveInvoice = (updated: Invoice) => {
     setInvoices((prev) =>

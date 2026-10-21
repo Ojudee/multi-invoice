@@ -385,14 +385,16 @@ export interface PackageSummary {
 /**
  * Calculates current values and subtotals for each package in the invoice
  */
-export function getPackageSummaries(invoice: Invoice): {
+export function getPackageSummaries(invoice?: Invoice | null): {
   packages: Record<keyof PackageSelectionMap, PackageSummary>;
   activeCount: number;
   grandTotal: number;
   totalArea: number;
 } {
   const config = getInvoicePackagesConfig(invoice);
-  const totalFloorArea = (invoice.floors || []).reduce((sum, f) => sum + (Number(f.area) || 0), 0) || 150;
+  const floors = Array.isArray(invoice?.floors) ? invoice.floors : [];
+  const addons = Array.isArray(invoice?.addons) ? invoice.addons : [];
+  const totalFloorArea = floors.reduce((sum, f) => sum + (Number(f.area) || 0), 0) || 150;
 
   // Architectural
   const archArea = config.architectural.area ?? totalFloorArea;
@@ -426,7 +428,7 @@ export function getPackageSummaries(invoice: Invoice): {
   const inspectionFeatures = SITE_INSPECTION_PACKAGE.includes;
 
   // Addons (excluding boq & inspection if configured separately)
-  const otherAddons = (invoice.addons || []).filter((a) => {
+  const otherAddons = addons.filter((a) => {
     if (!a.enabled) return false;
     const n = a.name.toLowerCase();
     if (n.includes('boq') || n.includes('quantities')) return false;
@@ -435,6 +437,9 @@ export function getPackageSummaries(invoice: Invoice): {
   });
   const addonsSubtotal = otherAddons.reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
+  const currency = invoice?.currency || 'GMD';
+  const unit = invoice?.unit || 'm²';
+
   const summaries: Record<keyof PackageSelectionMap, PackageSummary> = {
     architectural: {
       key: 'architectural',
@@ -442,8 +447,8 @@ export function getPackageSummaries(invoice: Invoice): {
       icon: '🏛️',
       enabled: config.architectural.enabled,
       tier: config.architectural.tier.toUpperCase(),
-      rateOrFeeLabel: `${invoice.currency} ${archRate} / ${invoice.unit}`,
-      areaOrQtyLabel: `${archArea.toFixed(1)} ${invoice.unit}`,
+      rateOrFeeLabel: `${currency} ${archRate} / ${unit}`,
+      areaOrQtyLabel: `${archArea.toFixed(1)} ${unit}`,
       subtotal: archSubtotal,
       badge: `${config.architectural.tier.toUpperCase()} TIER`,
       deliverables: archFeatures,
@@ -454,8 +459,8 @@ export function getPackageSummaries(invoice: Invoice): {
       icon: '🏗️',
       enabled: config.structural.enabled,
       tier: config.structural.tier.toUpperCase(),
-      rateOrFeeLabel: `${invoice.currency} ${structRate} / ${invoice.unit}`,
-      areaOrQtyLabel: `${structArea.toFixed(1)} ${invoice.unit}`,
+      rateOrFeeLabel: `${currency} ${structRate} / ${unit}`,
+      areaOrQtyLabel: `${structArea.toFixed(1)} ${unit}`,
       subtotal: structSubtotal,
       badge: `${config.structural.tier.toUpperCase()} TIER`,
       deliverables: structFeatures,
@@ -466,8 +471,8 @@ export function getPackageSummaries(invoice: Invoice): {
       icon: '📊',
       enabled: config.boq.enabled,
       tier: config.boq.tier.toUpperCase(),
-      rateOrFeeLabel: `${invoice.currency} ${boqFee.toLocaleString()}`,
-      areaOrQtyLabel: `${totalFloorArea.toFixed(1)} ${invoice.unit} Scope`,
+      rateOrFeeLabel: `${currency} ${boqFee.toLocaleString()}`,
+      areaOrQtyLabel: `${totalFloorArea.toFixed(1)} ${unit} Scope`,
       subtotal: boqSubtotal,
       badge: `${config.boq.tier.toUpperCase()} PACKAGE`,
       deliverables: boqFeatures,
@@ -477,7 +482,7 @@ export function getPackageSummaries(invoice: Invoice): {
       title: 'Site Inspection & Reports Package',
       icon: '🔍',
       enabled: config.inspection.enabled,
-      rateOrFeeLabel: `${invoice.currency} ${inspectionFee.toLocaleString()}`,
+      rateOrFeeLabel: `${currency} ${inspectionFee.toLocaleString()}`,
       areaOrQtyLabel: 'Site Assessment & Consultation',
       subtotal: inspectionSubtotal,
       badge: 'FIXED RATE',
@@ -488,7 +493,7 @@ export function getPackageSummaries(invoice: Invoice): {
       title: 'Additional Deliverables & Add-ons',
       icon: '⚡',
       enabled: otherAddons.length > 0,
-      rateOrFeeLabel: `${invoice.currency} ${addonsSubtotal.toLocaleString()}`,
+      rateOrFeeLabel: `${currency} ${addonsSubtotal.toLocaleString()}`,
       areaOrQtyLabel: `${otherAddons.length} item(s)`,
       subtotal: addonsSubtotal,
       badge: 'CUSTOM ADD-ONS',
@@ -522,6 +527,16 @@ export function filterInvoiceForPackages(
   isSinglePackage: boolean;
   singlePackageKey?: keyof PackageSelectionMap;
 } {
+  if (!invoice) {
+    return {
+      filteredInvoice: {} as Invoice,
+      bannerTitle: '',
+      selectedNames: [],
+      isSinglePackage: true,
+      singlePackageKey: undefined,
+    };
+  }
+
   const config = getInvoicePackagesConfig(invoice);
   const { packages, totalArea } = getPackageSummaries(invoice);
   const invoiceDiscipline = getInvoiceDiscipline(invoice);
