@@ -22,17 +22,18 @@ import {
   Layers,
   ArrowRight,
   ShieldCheck,
+  Package,
 } from 'lucide-react';
 import { Invoice, PackageType, PackageSelectionMap } from './types';
 import {
-  DisciplineKey,
+  PortalKey,
   PORTAL_CONFIGS,
-  loadDisciplineInvoices,
-  saveDisciplineInvoices,
-  loadDisciplineActiveId,
-  saveDisciplineActiveId,
-  loadDisciplineArchived,
-  saveDisciplineArchived,
+  loadPortalInvoices,
+  savePortalInvoices,
+  loadPortalActiveId,
+  savePortalActiveId,
+  loadPortalArchived,
+  savePortalArchived,
 } from './utils/portalManager';
 import { createDefaultInvoiceByType } from './data/sampleInvoices';
 import {
@@ -56,6 +57,7 @@ import { ArchitecturalSchedulePortal } from './components/ArchitecturalScheduleP
 import { StructuralEngineeringPortal } from './components/StructuralEngineeringPortal';
 import { BOQPortal } from './components/BOQPortal';
 import { SiteInspectionPortal } from './components/SiteInspectionPortal';
+import { PackagesPortal } from './components/PackagesPortal';
 import { DepartmentOfficialsModal } from './components/DepartmentOfficialsModal';
 import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { calculateInvoice, formatCurrency } from './utils/calculations';
@@ -63,62 +65,67 @@ import { downloadInvoicePDF } from './utils/pdfExport';
 
 export type SubViewMode = 'split' | 'preview_only' | 'schedule' | 'list' | 'rates';
 
-function getInitialPortal(): { discipline: DisciplineKey; isStandalone: boolean } {
+function getInitialPortal(): { portal: PortalKey; isStandalone: boolean } {
   try {
     const params = new URLSearchParams(window.location.search);
-    const p = (params.get('portal') || params.get('window')) as DisciplineKey;
-    if (p === 'architectural' || p === 'structural' || p === 'boq' || p === 'inspection') {
-      return { discipline: p, isStandalone: true };
+    const p = (params.get('portal') || params.get('window')) as PortalKey;
+    if (p === 'general' || p === 'architectural' || p === 'structural' || p === 'boq' || p === 'inspection') {
+      return { portal: p, isStandalone: true };
     }
   } catch {}
-  return { discipline: 'architectural', isStandalone: false };
+  return { portal: 'architectural', isStandalone: false };
 }
 
 export default function App() {
   const initialInfo = getInitialPortal();
-  const [activeDiscipline, setActiveDiscipline] = useState<DisciplineKey>(initialInfo.discipline);
+  const [activePortal, setActivePortal] = useState<PortalKey>(initialInfo.portal);
   const [isStandaloneWindow] = useState<boolean>(initialInfo.isStandalone);
 
-  // 100% INDEPENDENT INVOICE STATE FOR EACH OF THE 4 PORTALS
-  const [invoicesByDiscipline, setInvoicesByDiscipline] = useState<Record<DisciplineKey, Invoice[]>>(() => ({
-    architectural: loadDisciplineInvoices('architectural'),
-    structural: loadDisciplineInvoices('structural'),
-    boq: loadDisciplineInvoices('boq'),
-    inspection: loadDisciplineInvoices('inspection'),
+  // 100% INDEPENDENT INVOICE STATE FOR EACH OF THE 5 PORTALS
+  const [invoicesByPortal, setInvoicesByPortal] = useState<Record<PortalKey, Invoice[]>>(() => ({
+    general: loadPortalInvoices('general'),
+    architectural: loadPortalInvoices('architectural'),
+    structural: loadPortalInvoices('structural'),
+    boq: loadPortalInvoices('boq'),
+    inspection: loadPortalInvoices('inspection'),
   }));
 
-  const [activeIdByDiscipline, setActiveIdByDiscipline] = useState<Record<DisciplineKey, string>>(() => ({
-    architectural: loadDisciplineActiveId('architectural', 'inv-architectural-1'),
-    structural: loadDisciplineActiveId('structural', 'inv-structural-1'),
-    boq: loadDisciplineActiveId('boq', 'inv-boq-1'),
-    inspection: loadDisciplineActiveId('inspection', 'inv-inspection-1'),
+  const [activeIdByPortal, setActiveIdByPortal] = useState<Record<PortalKey, string>>(() => ({
+    general: loadPortalActiveId('general', 'inv-pkg-1'),
+    architectural: loadPortalActiveId('architectural', 'inv-architectural-1'),
+    structural: loadPortalActiveId('structural', 'inv-structural-1'),
+    boq: loadPortalActiveId('boq', 'inv-boq-1'),
+    inspection: loadPortalActiveId('inspection', 'inv-inspection-1'),
   }));
 
-  const [archivedByDiscipline, setArchivedByDiscipline] = useState<Record<DisciplineKey, Invoice[]>>(() => ({
-    architectural: loadDisciplineArchived('architectural'),
-    structural: loadDisciplineArchived('structural'),
-    boq: loadDisciplineArchived('boq'),
-    inspection: loadDisciplineArchived('inspection'),
+  const [archivedByPortal, setArchivedByPortal] = useState<Record<PortalKey, Invoice[]>>(() => ({
+    general: loadPortalArchived('general'),
+    architectural: loadPortalArchived('architectural'),
+    structural: loadPortalArchived('structural'),
+    boq: loadPortalArchived('boq'),
+    inspection: loadPortalArchived('inspection'),
   }));
 
-  const [subViewByDiscipline, setSubViewByDiscipline] = useState<Record<DisciplineKey, SubViewMode>>({
+  const [subViewByPortal, setSubViewByPortal] = useState<Record<PortalKey, SubViewMode>>({
+    general: 'split',
     architectural: 'split',
     structural: 'split',
     boq: 'split',
     inspection: 'split',
   });
 
-  // Current portal's isolated active objects
-  const currentConfig = PORTAL_CONFIGS[activeDiscipline];
-  const currentInvoices = invoicesByDiscipline[activeDiscipline] || [];
-  const currentActiveId = activeIdByDiscipline[activeDiscipline];
-  const currentArchived = archivedByDiscipline[activeDiscipline] || [];
-  const currentSubView = subViewByDiscipline[activeDiscipline] || 'split';
+  // Current portal's isolated active state
+  const currentConfig = PORTAL_CONFIGS[activePortal];
+  const currentInvoices = invoicesByPortal[activePortal] || [];
+  const currentActiveId = activeIdByPortal[activePortal];
+  const currentArchived = archivedByPortal[activePortal] || [];
+  const currentSubView = subViewByPortal[activePortal] || 'split';
 
+  const defaultCategory = activePortal === 'general' ? 'multi_package' : activePortal;
   const activeInvoice: Invoice =
     currentInvoices.find((inv) => inv.id === currentActiveId) ||
     currentInvoices[0] ||
-    createDefaultInvoiceByType(activeDiscipline, 1);
+    createDefaultInvoiceByType(defaultCategory, 1);
 
   // Modals state
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
@@ -138,21 +145,21 @@ export default function App() {
 
   // Synchronize body class for portal styling
   useEffect(() => {
-    document.body.className = `portal-discipline-${activeDiscipline} bg-slate-950 text-slate-100 antialiased font-sans`;
-  }, [activeDiscipline]);
+    document.body.className = `portal-${activePortal} bg-slate-950 text-slate-100 antialiased font-sans`;
+  }, [activePortal]);
 
-  // Persistent storage auto-save for current discipline
+  // Persistent storage auto-save for current portal
   useEffect(() => {
-    saveDisciplineInvoices(activeDiscipline, currentInvoices);
-  }, [activeDiscipline, currentInvoices]);
-
-  useEffect(() => {
-    saveDisciplineActiveId(activeDiscipline, activeInvoice.id);
-  }, [activeDiscipline, activeInvoice.id]);
+    savePortalInvoices(activePortal, currentInvoices);
+  }, [activePortal, currentInvoices]);
 
   useEffect(() => {
-    saveDisciplineArchived(activeDiscipline, currentArchived);
-  }, [activeDiscipline, currentArchived]);
+    savePortalActiveId(activePortal, activeInvoice.id);
+  }, [activePortal, activeInvoice.id]);
+
+  useEffect(() => {
+    savePortalArchived(activePortal, currentArchived);
+  }, [activePortal, currentArchived]);
 
   // Responsive scaling calculations
   useEffect(() => {
@@ -193,35 +200,36 @@ export default function App() {
 
   // Set sub-view for active portal
   const setSubView = (mode: SubViewMode) => {
-    setSubViewByDiscipline((prev) => ({
+    setSubViewByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: mode,
+      [activePortal]: mode,
     }));
   };
 
-  // 1. UPDATE ACTIVE INVOICE IN CURRENT DISCIPLINE
+  // 1. UPDATE ACTIVE INVOICE IN CURRENT PORTAL
   const handleUpdateActiveInvoice = (updated: Invoice) => {
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: prev[activeDiscipline].map((inv) =>
+      [activePortal]: prev[activePortal].map((inv) =>
         inv.id === updated.id ? { ...updated, updatedAt: new Date().toISOString() } : inv
       ),
     }));
   };
 
-  // 2. CREATE NEW INVOICE IN CURRENT DISCIPLINE
+  // 2. CREATE NEW INVOICE IN CURRENT PORTAL
   const handleCreateNewInvoiceInCurrentPortal = () => {
     const nextSeq = currentInvoices.length + currentArchived.length + 1;
-    const newInv = createDefaultInvoiceByType(activeDiscipline, nextSeq);
+    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+    const newInv = createDefaultInvoiceByType(cat, nextSeq);
 
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [newInv, ...prev[activeDiscipline]],
+      [activePortal]: [newInv, ...prev[activePortal]],
     }));
 
-    setActiveIdByDiscipline((prev) => ({
+    setActiveIdByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: newInv.id,
+      [activePortal]: newInv.id,
     }));
 
     setSubView('split');
@@ -229,13 +237,13 @@ export default function App() {
     setTimeout(() => setNotification(''), 4000);
   };
 
-  // 3. DUPLICATE INVOICE IN CURRENT DISCIPLINE
+  // 3. DUPLICATE INVOICE IN CURRENT PORTAL
   const handleDuplicateInvoice = (id: string) => {
     const target = currentInvoices.find((inv) => inv.id === id);
     if (!target) return;
     const duplicated: Invoice = {
       ...target,
-      id: `inv-${activeDiscipline}-${Date.now()}`,
+      id: `inv-${activePortal}-${Date.now()}`,
       invoiceNumber: `${target.invoiceNumber}-COPY`,
       status: 'draft',
       clientSignature: '',
@@ -244,51 +252,52 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     };
 
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [duplicated, ...prev[activeDiscipline]],
+      [activePortal]: [duplicated, ...prev[activePortal]],
     }));
 
-    setActiveIdByDiscipline((prev) => ({
+    setActiveIdByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: duplicated.id,
+      [activePortal]: duplicated.id,
     }));
 
     setNotification(`Duplicated ${target.invoiceNumber} as ${duplicated.invoiceNumber}`);
     setTimeout(() => setNotification(''), 3000);
   };
 
-  // 4. ARCHIVE INVOICE IN CURRENT DISCIPLINE
+  // 4. ARCHIVE INVOICE IN CURRENT PORTAL
   const handleArchiveInvoice = (id: string) => {
     const target = currentInvoices.find((inv) => inv.id === id);
     if (!target) return;
 
     const remaining = currentInvoices.filter((inv) => inv.id !== id);
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: remaining,
+      [activePortal]: remaining,
     }));
 
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [target, ...prev[activeDiscipline]],
+      [activePortal]: [target, ...prev[activePortal]],
     }));
 
     if (activeInvoice.id === id) {
       if (remaining.length > 0) {
-        setActiveIdByDiscipline((prev) => ({
+        setActiveIdByPortal((prev) => ({
           ...prev,
-          [activeDiscipline]: remaining[0].id,
+          [activePortal]: remaining[0].id,
         }));
       } else {
-        const fresh = createDefaultInvoiceByType(activeDiscipline, 1);
-        setInvoicesByDiscipline((prev) => ({
+        const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+        const fresh = createDefaultInvoiceByType(cat, 1);
+        setInvoicesByPortal((prev) => ({
           ...prev,
-          [activeDiscipline]: [fresh],
+          [activePortal]: [fresh],
         }));
-        setActiveIdByDiscipline((prev) => ({
+        setActiveIdByPortal((prev) => ({
           ...prev,
-          [activeDiscipline]: fresh.id,
+          [activePortal]: fresh.id,
         }));
       }
     }
@@ -297,52 +306,53 @@ export default function App() {
     setTimeout(() => setNotification(''), 3500);
   };
 
-  // 5. RESTORE INVOICE IN CURRENT DISCIPLINE
+  // 5. RESTORE INVOICE IN CURRENT PORTAL
   const handleRestoreInvoice = (id: string) => {
     const target = currentArchived.find((inv) => inv.id === id);
     if (!target) return;
 
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: prev[activeDiscipline].filter((inv) => inv.id !== id),
+      [activePortal]: prev[activePortal].filter((inv) => inv.id !== id),
     }));
 
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [target, ...prev[activeDiscipline]],
+      [activePortal]: [target, ...prev[activePortal]],
     }));
 
-    setActiveIdByDiscipline((prev) => ({
+    setActiveIdByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: target.id,
+      [activePortal]: target.id,
     }));
 
     setNotification(`Restored ${target.invoiceNumber} into active ${currentConfig.shortTitle} directory.`);
     setTimeout(() => setNotification(''), 3500);
   };
 
-  // 6. DELETE INVOICE IN CURRENT DISCIPLINE
+  // 6. DELETE INVOICE IN CURRENT PORTAL
   const handleDeleteInvoice = (id: string) => {
     const remaining = currentInvoices.filter((inv) => inv.id !== id);
     if (remaining.length === 0) {
-      const fresh = createDefaultInvoiceByType(activeDiscipline, 1);
-      setInvoicesByDiscipline((prev) => ({
+      const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+      const fresh = createDefaultInvoiceByType(cat, 1);
+      setInvoicesByPortal((prev) => ({
         ...prev,
-        [activeDiscipline]: [fresh],
+        [activePortal]: [fresh],
       }));
-      setActiveIdByDiscipline((prev) => ({
+      setActiveIdByPortal((prev) => ({
         ...prev,
-        [activeDiscipline]: fresh.id,
+        [activePortal]: fresh.id,
       }));
     } else {
-      setInvoicesByDiscipline((prev) => ({
+      setInvoicesByPortal((prev) => ({
         ...prev,
-        [activeDiscipline]: remaining,
+        [activePortal]: remaining,
       }));
       if (activeInvoice.id === id) {
-        setActiveIdByDiscipline((prev) => ({
+        setActiveIdByPortal((prev) => ({
           ...prev,
-          [activeDiscipline]: remaining[0].id,
+          [activePortal]: remaining[0].id,
         }));
       }
     }
@@ -350,21 +360,22 @@ export default function App() {
     setTimeout(() => setNotification(''), 3000);
   };
 
-  // 7. ARCHIVE ALL / RESTORE ALL IN CURRENT DISCIPLINE
+  // 7. ARCHIVE ALL / RESTORE ALL IN CURRENT PORTAL
   const handleArchiveAll = () => {
     if (currentInvoices.length === 0) return;
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [...prev[activeDiscipline], ...currentInvoices],
+      [activePortal]: [...prev[activePortal], ...currentInvoices],
     }));
-    const fresh = createDefaultInvoiceByType(activeDiscipline, 1);
-    setInvoicesByDiscipline((prev) => ({
+    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+    const fresh = createDefaultInvoiceByType(cat, 1);
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [fresh],
+      [activePortal]: [fresh],
     }));
-    setActiveIdByDiscipline((prev) => ({
+    setActiveIdByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: fresh.id,
+      [activePortal]: fresh.id,
     }));
     setNotification(`Archived all ${currentConfig.shortTitle} invoices.`);
     setTimeout(() => setNotification(''), 3000);
@@ -372,13 +383,13 @@ export default function App() {
 
   const handleRestoreAllArchived = () => {
     if (currentArchived.length === 0) return;
-    setInvoicesByDiscipline((prev) => ({
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [...currentArchived, ...prev[activeDiscipline]],
+      [activePortal]: [...currentArchived, ...prev[activePortal]],
     }));
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [],
+      [activePortal]: [],
     }));
     setNotification(`Restored all archived ${currentConfig.shortTitle} invoices.`);
     setTimeout(() => setNotification(''), 3000);
@@ -386,32 +397,33 @@ export default function App() {
 
   const handleEmptyArchive = () => {
     const count = currentArchived.length;
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [],
+      [activePortal]: [],
     }));
     setNotification(`Emptied ${currentConfig.shortTitle} archive (${count} items permanently removed).`);
     setTimeout(() => setNotification(''), 3000);
   };
 
   const handlePermanentDeleteArchived = (id: string) => {
-    setArchivedByDiscipline((prev) => ({
+    setArchivedByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: prev[activeDiscipline].filter((inv) => inv.id !== id),
+      [activePortal]: prev[activePortal].filter((inv) => inv.id !== id),
     }));
     setNotification('Item permanently removed from archive.');
     setTimeout(() => setNotification(''), 2500);
   };
 
   const handleRestoreSampleInvoices = () => {
-    const defaultInv = createDefaultInvoiceByType(activeDiscipline, 1);
-    setInvoicesByDiscipline((prev) => ({
+    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+    const defaultInv = createDefaultInvoiceByType(cat, 1);
+    setInvoicesByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: [defaultInv],
+      [activePortal]: [defaultInv],
     }));
-    setActiveIdByDiscipline((prev) => ({
+    setActiveIdByPortal((prev) => ({
       ...prev,
-      [activeDiscipline]: defaultInv.id,
+      [activePortal]: defaultInv.id,
     }));
     setNotification(`Restored fresh default ${currentConfig.shortTitle} invoice.`);
     setTimeout(() => setNotification(''), 3000);
@@ -419,8 +431,8 @@ export default function App() {
 
   // MANUAL SAVE BACKUP
   const handleManualSave = () => {
-    saveDisciplineInvoices(activeDiscipline, currentInvoices);
-    saveDisciplineActiveId(activeDiscipline, activeInvoice.id);
+    savePortalInvoices(activePortal, currentInvoices);
+    savePortalActiveId(activePortal, activeInvoice.id);
     setNotification(`Saved ${activeInvoice.invoiceNumber} to local storage`);
     setTimeout(() => setNotification(''), 3000);
   };
@@ -484,30 +496,35 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     });
     setSubView('split');
-    setNotification(`Updated ${activeInvoice.invoiceNumber} with technical schedule specifications!`);
+    setNotification(`Updated ${activeInvoice.invoiceNumber} with technical specifications!`);
     setTimeout(() => setNotification(''), 4000);
   };
 
   // POP OUT PORTAL INTO STANDALONE WINDOW
-  const handlePopoutWindow = (targetDiscipline: DisciplineKey) => {
+  const handlePopoutWindow = (targetPortal: PortalKey) => {
     try {
-      const url = `${window.location.origin}${window.location.pathname}?portal=${targetDiscipline}`;
+      const url = `${window.location.origin}${window.location.pathname}?portal=${targetPortal}`;
       const pop = window.open(
         url,
-        `Univision_${targetDiscipline}_Window`,
+        `Univision_${targetPortal}_Window`,
         'width=1340,height=920,resizable=yes,scrollbars=yes,status=no'
       );
       if (pop) {
         pop.focus();
-        setNotification(`Opened ${targetDiscipline.toUpperCase()} in separate window!`);
+        setNotification(`Opened ${targetPortal.toUpperCase()} in separate window!`);
       } else {
-        setActiveDiscipline(targetDiscipline);
+        setActivePortal(targetPortal);
       }
     } catch {
-      setActiveDiscipline(targetDiscipline);
+      setActivePortal(targetPortal);
     }
     setTimeout(() => setNotification(''), 4000);
   };
+
+  // Determine lockStudioTab: 
+  // If activePortal is general, lockStudioTab is 'multi_package' (or unconstrained combined mode)
+  // If activePortal is discipline, lockStudioTab is that exact discipline
+  const lockedStudioTab = activePortal === 'general' ? 'multi_package' : activePortal;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 antialiased font-sans selection:bg-amber-400 selection:text-slate-950">
@@ -519,9 +536,9 @@ export default function App() {
         </div>
       )}
 
-      {/* TOP HEADER: 4 COMPLETELY INDEPENDENT PORTALS */}
+      {/* TOP HEADER: EXACTLY 5 DEDICATED INDEPENDENT PORTALS */}
       <header className="bg-slate-900 border-b border-slate-800 shadow-md sticky top-0 z-40 px-3 sm:px-6 py-2.5">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           {/* Logo & Corporate Tagline */}
           <div className="flex items-center gap-3">
             <UnivisionLogo className="w-9 h-9 shrink-0 drop-shadow-md" />
@@ -531,87 +548,105 @@ export default function App() {
                   UNIVISION
                 </span>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30 uppercase tracking-wider">
-                  4-Portal Advance Studio
+                  5-Portal Studio Suite
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
-                Architectural • Structural • BOQ • Site Inspection
+                4 Independent Discipline Portals + 1 General Combined Studio
               </p>
             </div>
           </div>
 
-          {/* 4 PRIMARY INDEPENDENT PORTAL TABS */}
+          {/* 5 PRIMARY INDEPENDENT PORTALS NAV */}
           <nav className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 no-scrollbar">
             {/* PORTAL 1: ARCHITECTURAL */}
             <button
               type="button"
-              onClick={() => setActiveDiscipline('architectural')}
+              onClick={() => setActivePortal('architectural')}
               className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeDiscipline === 'architectural'
+                activePortal === 'architectural'
                   ? 'bg-amber-400 text-slate-950 border-amber-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
               }`}
             >
-              <Compass className={`w-3.5 h-3.5 ${activeDiscipline === 'architectural' ? 'text-slate-950' : 'text-amber-400'}`} />
+              <Compass className={`w-3.5 h-3.5 ${activePortal === 'architectural' ? 'text-slate-950' : 'text-amber-400'}`} />
               <span>Architectural</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeDiscipline === 'architectural' ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-800 text-amber-300 border border-amber-500/30'}`}>
-                {invoicesByDiscipline.architectural[0]?.invoiceNumber || 'INV-ARC-001'}
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'architectural' ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-800 text-amber-300 border border-amber-500/30'}`}>
+                {invoicesByPortal.architectural[0]?.invoiceNumber || 'INV-ARC-001'}
               </span>
             </button>
 
             {/* PORTAL 2: STRUCTURAL */}
             <button
               type="button"
-              onClick={() => setActiveDiscipline('structural')}
+              onClick={() => setActivePortal('structural')}
               className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeDiscipline === 'structural'
+                activePortal === 'structural'
                   ? 'bg-blue-500 text-white border-blue-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
               }`}
             >
-              <Building2 className={`w-3.5 h-3.5 ${activeDiscipline === 'structural' ? 'text-white' : 'text-blue-400'}`} />
+              <Building2 className={`w-3.5 h-3.5 ${activePortal === 'structural' ? 'text-white' : 'text-blue-400'}`} />
               <span>Structural</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeDiscipline === 'structural' ? 'bg-blue-700 text-white font-bold' : 'bg-slate-800 text-blue-300 border border-blue-500/30'}`}>
-                {invoicesByDiscipline.structural[0]?.invoiceNumber || 'INV-STR-001'}
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'structural' ? 'bg-blue-700 text-white font-bold' : 'bg-slate-800 text-blue-300 border border-blue-500/30'}`}>
+                {invoicesByPortal.structural[0]?.invoiceNumber || 'INV-STR-001'}
               </span>
             </button>
 
             {/* PORTAL 3: BOQ */}
             <button
               type="button"
-              onClick={() => setActiveDiscipline('boq')}
+              onClick={() => setActivePortal('boq')}
               className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeDiscipline === 'boq'
+                activePortal === 'boq'
                   ? 'bg-emerald-500 text-white border-emerald-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
               }`}
             >
-              <FileSpreadsheet className={`w-3.5 h-3.5 ${activeDiscipline === 'boq' ? 'text-white' : 'text-emerald-400'}`} />
+              <FileSpreadsheet className={`w-3.5 h-3.5 ${activePortal === 'boq' ? 'text-white' : 'text-emerald-400'}`} />
               <span>BOQ Studio</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeDiscipline === 'boq' ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-800 text-emerald-300 border border-emerald-500/30'}`}>
-                {invoicesByDiscipline.boq[0]?.invoiceNumber || 'INV-BOQ-001'}
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'boq' ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-800 text-emerald-300 border border-emerald-500/30'}`}>
+                {invoicesByPortal.boq[0]?.invoiceNumber || 'INV-BOQ-001'}
               </span>
             </button>
 
             {/* PORTAL 4: SITE INSPECTION */}
             <button
               type="button"
-              onClick={() => setActiveDiscipline('inspection')}
+              onClick={() => setActivePortal('inspection')}
               className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                activeDiscipline === 'inspection'
+                activePortal === 'inspection'
                   ? 'bg-orange-500 text-white border-orange-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
               }`}
             >
-              <HardHat className={`w-3.5 h-3.5 ${activeDiscipline === 'inspection' ? 'text-white' : 'text-orange-400'}`} />
+              <HardHat className={`w-3.5 h-3.5 ${activePortal === 'inspection' ? 'text-white' : 'text-orange-400'}`} />
               <span>Site Inspection</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activeDiscipline === 'inspection' ? 'bg-orange-700 text-white font-bold' : 'bg-slate-800 text-orange-300 border border-orange-500/30'}`}>
-                {invoicesByDiscipline.inspection[0]?.invoiceNumber || 'INV-INS-001'}
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'inspection' ? 'bg-orange-700 text-white font-bold' : 'bg-slate-800 text-orange-300 border border-orange-500/30'}`}>
+                {invoicesByPortal.inspection[0]?.invoiceNumber || 'INV-INS-001'}
+              </span>
+            </button>
+
+            {/* PORTAL 5: GENERAL INVOICE STUDIO (COMBINED PACKAGES) */}
+            <button
+              type="button"
+              onClick={() => setActivePortal('general')}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                activePortal === 'general'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md font-bold ring-1 ring-purple-300'
+                  : 'bg-slate-900/90 text-purple-200 hover:text-white hover:bg-purple-950/60 border-purple-800/60'
+              }`}
+              title="Combined Invoice Studio for bundling two or more disciplines into one invoice"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${activePortal === 'general' ? 'text-white' : 'text-purple-400'}`} />
+              <span>General Studio (Combined)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'general' ? 'bg-purple-900 text-white font-bold' : 'bg-slate-800 text-purple-300 border border-purple-500/30'}`}>
+                {invoicesByPortal.general[0]?.invoiceNumber || 'INV-PKG-001'}
               </span>
             </button>
           </nav>
 
-          {/* Quick Utility Tools */}
+          {/* Quick Corporate Tools */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
@@ -625,7 +660,7 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => handlePopoutWindow(activeDiscipline)}
+              onClick={() => handlePopoutWindow(activePortal)}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
               title="Pop out this portal in a dedicated standalone OS window"
             >
@@ -671,6 +706,7 @@ export default function App() {
               Full Document Preview
             </button>
 
+            {/* Technical Schedule or Combined Package Matrix */}
             <button
               type="button"
               onClick={() => setSubView('schedule')}
@@ -682,11 +718,13 @@ export default function App() {
             >
               <SlidersHorizontal className="w-3 h-3 text-amber-400" />
               <span>
-                {activeDiscipline === 'architectural'
+                {activePortal === 'general'
+                  ? 'Cross-Discipline Package Matrix'
+                  : activePortal === 'architectural'
                   ? 'Drawing Sheets Schedule'
-                  : activeDiscipline === 'structural'
+                  : activePortal === 'structural'
                   ? 'Framing & Rebar Schedule'
-                  : activeDiscipline === 'boq'
+                  : activePortal === 'boq'
                   ? 'BOQ Takeoff & Brackets'
                   : 'Inspection Log & Audit'}
               </span>
@@ -810,12 +848,14 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Invoice Editor with discipline locking for the 4 portals, or combined mode for General Studio */}
               <InvoiceEditor
                 invoice={activeInvoice}
                 onChange={handleUpdateActiveInvoice}
                 onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
                 onDownloadPDF={handleDownloadPDF}
                 onPrintPreview={() => handleOpenPrintPreview()}
+                lockStudioTab={lockedStudioTab}
               />
             </div>
 
@@ -939,19 +979,21 @@ export default function App() {
           </div>
         )}
 
-        {/* SUBVIEW 3: DISCIPLINE TECHNICAL SCHEDULE & ENGINEERING TOOLS */}
+        {/* SUBVIEW 3: DISCIPLINE TECHNICAL SCHEDULE OR MULTI-PACKAGE MATRIX */}
         {currentSubView === 'schedule' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <span>{currentConfig.title} — Technical Schedule & Specs</span>
+                  <span>{currentConfig.title} — {activePortal === 'general' ? 'Package Matrix & Scope Comparison' : 'Technical Schedule & Specs'}</span>
                   <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30">
                     Syncing with {activeInvoice.invoiceNumber}
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Edits made here operate 100% independently within the {currentConfig.shortTitle} Portal.
+                  {activePortal === 'general'
+                    ? 'Explore and bundle across all four Univision engineering disciplines into combined contracts.'
+                    : `Edits made here operate 100% independently within the ${currentConfig.shortTitle} Portal.`}
                 </p>
               </div>
 
@@ -965,54 +1007,67 @@ export default function App() {
               </button>
             </div>
 
-            {/* EMBEDDED TECHNICAL PORTAL FOR THE SELECTED DISCIPLINE */}
-            {activeDiscipline === 'architectural' && (
+            {/* EMBEDDED TECHNICAL TOOLS ACCORDING TO PORTAL */}
+            {activePortal === 'general' && (
+              <PackagesPortal
+                isStandaloneWindow={false}
+                onPopoutWindow={() => handlePopoutWindow('general')}
+                onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
+                onSwitchPortal={(p) => {
+                  if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
+                    setActivePortal(p);
+                  }
+                }}
+              />
+            )}
+
+            {activePortal === 'architectural' && (
               <ArchitecturalSchedulePortal
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('architectural')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
-                    setActiveDiscipline(p);
+                    setActivePortal(p);
                   }
                 }}
               />
             )}
 
-            {activeDiscipline === 'structural' && (
+            {activePortal === 'structural' && (
               <StructuralEngineeringPortal
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('structural')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
-                    setActiveDiscipline(p);
+                    setActivePortal(p);
                   }
                 }}
               />
             )}
 
-            {activeDiscipline === 'boq' && (
+            {activePortal === 'boq' && (
               <BOQPortal
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('boq')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
-                    setActiveDiscipline(p);
+                    setActivePortal(p);
                   }
                 }}
               />
             )}
 
-            {activeDiscipline === 'inspection' && (
+            {activePortal === 'inspection' && (
               <SiteInspectionPortal
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('inspection')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
-                    setActiveDiscipline(p);
+                    setActivePortal(p);
                   }
                 }}
               />
@@ -1020,7 +1075,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SUBVIEW 4: INVOICES DIRECTORY FOR THIS DISCIPLINE ONLY */}
+        {/* SUBVIEW 4: INVOICES DIRECTORY FOR THIS PORTAL ONLY */}
         {currentSubView === 'list' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4">
@@ -1032,7 +1087,9 @@ export default function App() {
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Strictly showing only {currentConfig.shortTitle} invoices. Other portals remain 100% separate.
+                  {activePortal === 'general'
+                    ? 'Directory for Multi-Discipline Combined Invoices (bundles of 2 or more disciplines).'
+                    : `Strictly showing only ${currentConfig.shortTitle} invoices. Other portals remain 100% separate.`}
                 </p>
               </div>
 
@@ -1051,9 +1108,9 @@ export default function App() {
               archivedInvoices={currentArchived}
               activeInvoiceId={activeInvoice.id}
               onSelectInvoice={(id) => {
-                setActiveIdByDiscipline((prev) => ({
+                setActiveIdByPortal((prev) => ({
                   ...prev,
-                  [activeDiscipline]: id,
+                  [activePortal]: id,
                 }));
                 setSubView('split');
               }}
@@ -1063,14 +1120,15 @@ export default function App() {
               onArchiveInvoice={handleArchiveInvoice}
               onArchiveAll={handleArchiveAll}
               onDeleteAll={() => {
-                const fresh = createDefaultInvoiceByType(activeDiscipline, 1);
-                setInvoicesByDiscipline((prev) => ({
+                const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+                const fresh = createDefaultInvoiceByType(cat, 1);
+                setInvoicesByPortal((prev) => ({
                   ...prev,
-                  [activeDiscipline]: [fresh],
+                  [activePortal]: [fresh],
                 }));
-                setActiveIdByDiscipline((prev) => ({
+                setActiveIdByPortal((prev) => ({
                   ...prev,
-                  [activeDiscipline]: fresh.id,
+                  [activePortal]: fresh.id,
                 }));
                 setNotification(`Reset ${currentConfig.shortTitle} invoices directory.`);
                 setTimeout(() => setNotification(''), 3000);
@@ -1084,7 +1142,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SUBVIEW 5: RATES & DELIVERABLES SCOPE FOR THIS DISCIPLINE */}
+        {/* SUBVIEW 5: RATES & DELIVERABLES SCOPE */}
         {currentSubView === 'rates' && (
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
@@ -1104,10 +1162,54 @@ export default function App() {
                 </button>
               </div>
 
+              {/* GENERAL COMBINED STUDIO RATES OVERVIEW */}
+              {activePortal === 'general' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                  <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-4 space-y-2">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                      01. ARCHITECTURAL
+                    </span>
+                    <div className="text-base font-extrabold text-white font-mono">D75 – D100 / m²</div>
+                    <p className="text-[11px] text-slate-400">
+                      Working drawings, floor layouts, elevations, door/window schedules & municipal permit sets.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 border border-blue-500/30 rounded-xl p-4 space-y-2">
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                      02. STRUCTURAL
+                    </span>
+                    <div className="text-base font-extrabold text-white font-mono">D65 – D85 / m²</div>
+                    <p className="text-[11px] text-slate-400">
+                      Foundations, reinforced columns, beams, suspended slabs, BBS & calculation reports.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 border border-emerald-500/30 rounded-xl p-4 space-y-2">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                      03. BOQ & COST
+                    </span>
+                    <div className="text-base font-extrabold text-white font-mono">D30k – D60k Fixed</div>
+                    <p className="text-[11px] text-slate-400">
+                      Tiered material takeoff, trade labor schedules, bills of quantities & tender documents.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-950 border border-orange-500/30 rounded-xl p-4 space-y-2">
+                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">
+                      04. SITE INSPECTION
+                    </span>
+                    <div className="text-base font-extrabold text-white font-mono">D15k / Visit • D50k Full</div>
+                    <p className="text-[11px] text-slate-400">
+                      Pre-pour rebar audits, concrete slump checks, defect photographic logs & certificates.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* ARCHITECTURAL RATES BREAKDOWN */}
-              {activeDiscipline === 'architectural' && (
+              {activePortal === 'architectural' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                  {/* Regular Tier */}
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
@@ -1128,7 +1230,6 @@ export default function App() {
                     </ul>
                   </div>
 
-                  {/* Premium Tier */}
                   <div className="bg-slate-950 border-2 border-amber-500/60 rounded-xl p-5 space-y-4 relative overflow-hidden shadow-lg">
                     <div className="absolute top-0 right-0 bg-amber-400 text-slate-950 text-[10px] font-bold px-3 py-1 rounded-bl-lg uppercase">
                       Recommended
@@ -1155,9 +1256,8 @@ export default function App() {
               )}
 
               {/* STRUCTURAL RATES BREAKDOWN */}
-              {activeDiscipline === 'structural' && (
+              {activePortal === 'structural' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                  {/* Regular Tier */}
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
@@ -1178,7 +1278,6 @@ export default function App() {
                     </ul>
                   </div>
 
-                  {/* Premium Tier */}
                   <div className="bg-slate-950 border-2 border-blue-500/60 rounded-xl p-5 space-y-4 relative overflow-hidden shadow-lg">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
@@ -1202,7 +1301,7 @@ export default function App() {
               )}
 
               {/* BOQ RATES BREAKDOWN */}
-              {activeDiscipline === 'boq' && (
+              {activePortal === 'boq' && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
                     <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
@@ -1261,7 +1360,7 @@ export default function App() {
               )}
 
               {/* SITE INSPECTION RATES BREAKDOWN */}
-              {activeDiscipline === 'inspection' && (
+              {activePortal === 'inspection' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                   <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
@@ -1313,7 +1412,7 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 text-xs py-4 px-6 text-center">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            © {new Date().getFullYear()} Univision Design and Construction Ltd. All four portals operate 100% independently.
+            © {new Date().getFullYear()} Univision Design and Construction Ltd. 5-Portal Advance Invoice System.
           </span>
           <div className="flex items-center gap-4 text-slate-400 font-medium">
             <span>The Gambia</span>
@@ -1325,6 +1424,8 @@ export default function App() {
             <span>BOQ</span>
             <span>•</span>
             <span>Site Inspection</span>
+            <span>•</span>
+            <span className="text-purple-400 font-semibold">General Combined Studio</span>
           </div>
         </div>
       </footer>
@@ -1373,7 +1474,7 @@ export default function App() {
         <DepartmentOfficialsModal
           isOpen={isOfficialsModalOpen}
           onClose={() => setIsOfficialsModalOpen(false)}
-          initialDepartment={activeDiscipline}
+          initialDepartment={activePortal === 'general' ? 'architectural' : activePortal}
         />
       )}
 

@@ -69,6 +69,7 @@ interface InvoiceEditorProps {
   saveStatusMessage?: string;
   initialStudioTab?: StudioTab;
   onStudioTabChange?: (tab: StudioTab) => void;
+  lockStudioTab?: StudioTab;
   onOpenArchitecturalPortal?: () => void;
   onOpenStructuralPortal?: () => void;
   onOpenBOQPortal?: () => void;
@@ -86,6 +87,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   saveStatusMessage = 'Auto-saved locally',
   initialStudioTab,
   onStudioTabChange,
+  lockStudioTab,
   onOpenArchitecturalPortal,
   onOpenStructuralPortal,
   onOpenBOQPortal,
@@ -133,6 +135,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
 
   // Selected Studio Tab in Schedule Tab
   const [schedulePackageTab, setSchedulePackageTab] = useState<StudioTab>(() => {
+    if (lockStudioTab) return lockStudioTab;
     if (initialStudioTab) return initialStudioTab;
     if (invoice.invoiceCategory) return invoice.invoiceCategory;
     if (invoice.invoiceNumber.includes('BOQ')) return 'boq';
@@ -143,11 +146,14 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   });
 
   React.useEffect(() => {
-    if (initialStudioTab) {
+    if (lockStudioTab) {
+      setSchedulePackageTab(lockStudioTab);
+      setActiveTab('floors');
+    } else if (initialStudioTab) {
       setSchedulePackageTab(initialStudioTab);
       setActiveTab('floors');
     }
-  }, [initialStudioTab]);
+  }, [lockStudioTab, initialStudioTab]);
 
   const handleSelectStudioTab = (tab: StudioTab) => {
     setSchedulePackageTab(tab);
@@ -614,91 +620,110 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 </p>
               </div>
 
-              {/* Sub-tabs for each dedicated Invoice Studio */}
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleSelectStudioTab('architectural')}
-                  className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    schedulePackageTab === 'architectural'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>🏛️ Arch Studio</span>
-                  <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-                    pkgConfig.architectural.enabled ? 'bg-blue-900 text-blue-200' : 'bg-black/30 text-slate-500'
-                  }`}>
-                    {pkgConfig.architectural.enabled ? pkgConfig.architectural.tier.toUpperCase() : 'OFF'}
+              {/* Sub-tabs for each dedicated Invoice Studio or Independent Discipline Banner */}
+              {lockStudioTab && lockStudioTab !== 'multi_package' ? (
+                <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-white flex items-center gap-1.5">
+                      {lockStudioTab === 'architectural' && '🏛️ ARCHITECTURAL DRAWINGS STUDIO'}
+                      {lockStudioTab === 'structural' && '🏗️ STRUCTURAL ENGINEERING STUDIO'}
+                      {lockStudioTab === 'boq' && '📊 BILLS OF QUANTITIES (BOQ) STUDIO'}
+                      {lockStudioTab === 'inspection' && '🔍 SITE INSPECTION & SUPERVISION STUDIO'}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono border border-emerald-500/30">
+                      Independent Discipline Mode
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400 hidden sm:inline">
+                    Dedicated Single Discipline Scope
                   </span>
-                </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStudioTab('multi_package')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      schedulePackageTab === 'multi_package'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📦 Combined Multi-Package</span>
+                    <span className="text-[10px] px-1 py-0.2 rounded font-mono bg-purple-900 text-purple-200">
+                      ALL IN ONE
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectStudioTab('structural')}
-                  className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    schedulePackageTab === 'structural'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>🏗️ Structural Studio</span>
-                  <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-                    pkgConfig.structural.enabled ? 'bg-indigo-900 text-indigo-200' : 'bg-black/30 text-slate-500'
-                  }`}>
-                    {pkgConfig.structural.enabled ? pkgConfig.structural.tier.toUpperCase() : 'OFF'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStudioTab('architectural')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      schedulePackageTab === 'architectural'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🏛️ Arch Section</span>
+                    <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
+                      pkgConfig.architectural.enabled ? 'bg-blue-900 text-blue-200' : 'bg-black/30 text-slate-500'
+                    }`}>
+                      {pkgConfig.architectural.enabled ? pkgConfig.architectural.tier.toUpperCase() : 'OFF'}
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectStudioTab('boq')}
-                  className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    schedulePackageTab === 'boq'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>📊 BOQ Studio</span>
-                  <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-                    pkgConfig.boq.enabled ? 'bg-emerald-900 text-emerald-200' : 'bg-black/30 text-slate-500'
-                  }`}>
-                    {pkgConfig.boq.enabled ? pkgConfig.boq.tier.toUpperCase() : 'OFF'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStudioTab('structural')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      schedulePackageTab === 'structural'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🏗️ Structural Section</span>
+                    <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
+                      pkgConfig.structural.enabled ? 'bg-indigo-900 text-indigo-200' : 'bg-black/30 text-slate-500'
+                    }`}>
+                      {pkgConfig.structural.enabled ? pkgConfig.structural.tier.toUpperCase() : 'OFF'}
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectStudioTab('inspection')}
-                  className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    schedulePackageTab === 'inspection'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>🔍 Inspection Studio</span>
-                  <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
-                    pkgConfig.inspection.enabled ? 'bg-amber-900 text-amber-200' : 'bg-black/30 text-slate-500'
-                  }`}>
-                    {pkgConfig.inspection.enabled ? 'ACTIVE' : 'OFF'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStudioTab('boq')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      schedulePackageTab === 'boq'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📊 BOQ Section</span>
+                    <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
+                      pkgConfig.boq.enabled ? 'bg-emerald-900 text-emerald-200' : 'bg-black/30 text-slate-500'
+                    }`}>
+                      {pkgConfig.boq.enabled ? pkgConfig.boq.tier.toUpperCase() : 'OFF'}
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleSelectStudioTab('multi_package')}
-                  className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                    schedulePackageTab === 'multi_package'
-                      ? 'bg-purple-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>📦 Multi-Package Studio</span>
-                  <span className="text-[10px] px-1 py-0.2 rounded font-mono bg-purple-900 text-purple-200">
-                    COMBINED
-                  </span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStudioTab('inspection')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      schedulePackageTab === 'inspection'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🔍 Inspection Section</span>
+                    <span className={`text-[10px] px-1 py-0.2 rounded font-mono ${
+                      pkgConfig.inspection.enabled ? 'bg-amber-900 text-amber-200' : 'bg-black/30 text-slate-500'
+                    }`}>
+                      {pkgConfig.inspection.enabled ? 'ACTIVE' : 'OFF'}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* ================= 1. ARCHITECTURAL PACKAGE SECTION ================= */}
