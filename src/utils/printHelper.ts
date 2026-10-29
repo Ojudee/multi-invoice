@@ -61,12 +61,7 @@ export function printInvoiceElement(
         .map((node) => node.outerHTML)
         .join('\n');
 
-      const printWidthMm = 194;
       const printHeightMm = 281;
-      const sourceWidth = target.offsetWidth || 800;
-      const sourceHeight = target.offsetHeight || target.scrollHeight;
-      const scaledHeight = sourceHeight * ((printWidthMm * 96) / 25.4 / sourceWidth);
-      const fitScale = Math.min(1, ((printHeightMm * 96) / 25.4) / scaledHeight);
       const printTarget = target.cloneNode(true) as HTMLElement;
       printTarget.id = 'univision-print-target';
 
@@ -112,7 +107,7 @@ export function printInvoiceElement(
                 width: 194mm !important;
                 max-width: 194mm !important;
                 box-sizing: border-box !important;
-                transform: scale(${fitScale}) !important;
+                transform: scale(var(--print-fit-scale, 1)) !important;
                 transform-origin: center center !important;
                 background: #ffffff !important;
               }
@@ -137,6 +132,14 @@ export function printInvoiceElement(
 
       setTimeout(() => {
         try {
+          const printTarget = iframe.contentDocument?.getElementById('univision-print-target');
+          if (!printTarget) {
+            throw new Error('Unable to measure the invoice in the print document.');
+          }
+          const printableHeightPx = (printHeightMm * 96) / 25.4;
+          const fitScale = Math.min(1, printableHeightPx / printTarget.offsetHeight);
+          printTarget.style.setProperty('--print-fit-scale', String(fitScale));
+
           iframe.contentWindow?.focus();
           iframe.contentWindow?.addEventListener('afterprint', () => {
             if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
