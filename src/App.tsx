@@ -546,7 +546,7 @@ export default function App() {
   // PDF DOWNLOAD & PRINT PREVIEW
   const handleDownloadPDF = async () => {
     setIsGeneratingPDF(true);
-    setNotification(`Compiling high-resolution A4 PDF for ${activeInvoice.invoiceNumber}...`);
+    setNotification(`Compiling preview-matched PDF for ${activeInvoice.invoiceNumber}...`);
 
     const success = await downloadInvoicePDF(activeInvoice, {
       filename: `${activeInvoice.invoiceNumber}_Univision_Invoice.pdf`,
@@ -568,10 +568,10 @@ export default function App() {
   };
 
   const handleSafePrint = async () => {
-    setNotification('Preparing fitted A4 print...');
+    setNotification('Preparing print from the invoice preview...');
     try {
       const printed = await printInvoiceElement('univision-invoice-sheet');
-      setNotification(printed ? 'A4 print dialog opened.' : 'Unable to prepare the print document.');
+      setNotification(printed ? 'Preview-matched print dialog opened.' : 'Unable to prepare the print document.');
     } catch (error) {
       console.error('Error preparing print document', error);
       setNotification('Print preparation failed.');

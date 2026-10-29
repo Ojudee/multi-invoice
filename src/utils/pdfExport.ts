@@ -7,7 +7,7 @@ export { downloadPrintableHTML };
 
 /**
  * Robust invoice PDF export engine.
- * First generates an exact 1:1 pixel-perfect A4 PDF capturing the paper preview.
+ * First generates a pixel-perfect PDF capturing the paper preview at its exact aspect ratio.
  * Seamlessly falls back to vector jsPDF if DOM capture is unavailable.
  */
 export async function downloadInvoicePDF(

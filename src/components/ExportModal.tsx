@@ -15,6 +15,7 @@ import {
 import { Invoice } from '../types';
 import { calculateInvoice, formatCurrency, formatDateToSlash } from '../utils/calculations';
 import { downloadInvoicePDF, downloadPrintableHTML } from '../utils/pdfExport';
+import { printInvoiceElement } from '../utils/printHelper';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -120,22 +121,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
-  // Safe system print: automatically ensures PDF is downloaded even if iframe blocks print dialog
+  // Print the rendered invoice preview instead of printing the surrounding application UI.
   const handlePrint = async () => {
+    const success = await printInvoiceElement('univision-invoice-sheet');
     onClose();
-    // Generate and download the exact PDF document
-    await handleDownloadPDF();
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (err) {
-        console.warn('System print blocked by sandbox', err);
-      }
-    }, 200);
+    if (!success) setPdfStatusMessage('Unable to prepare the invoice preview for printing.');
   };
 
-  const handleDownloadHtml = () => {
-    downloadPrintableHTML(invoice);
+  const handleDownloadHtml = async () => {
+    const success = await downloadPrintableHTML(invoice);
+    setPdfStatusMessage(success ? 'Preview-matched HTML downloaded.' : 'Unable to create the preview HTML.');
+    setTimeout(() => setPdfStatusMessage(''), 4000);
   };
 
   // Generate plain-text client summary
