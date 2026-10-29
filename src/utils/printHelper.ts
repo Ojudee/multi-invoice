@@ -61,6 +61,15 @@ export function printInvoiceElement(
         .map((node) => node.outerHTML)
         .join('\n');
 
+      const printWidthMm = 194;
+      const printHeightMm = 281;
+      const sourceWidth = target.offsetWidth || 800;
+      const sourceHeight = target.offsetHeight || target.scrollHeight;
+      const scaledHeight = sourceHeight * ((printWidthMm * 96) / 25.4 / sourceWidth);
+      const fitScale = Math.min(1, ((printHeightMm * 96) / 25.4) / scaledHeight);
+      const printTarget = target.cloneNode(true) as HTMLElement;
+      printTarget.id = 'univision-print-target';
+
       const htmlContent = `
         <!DOCTYPE html>
         <html lang="en">
@@ -74,7 +83,7 @@ export function printInvoiceElement(
             <style>
               @page {
                 size: A4 portrait;
-                margin: 6mm auto;
+                margin: 8mm;
               }
               html, body {
                 margin: 0 !important;
@@ -85,19 +94,27 @@ export function printInvoiceElement(
                 print-color-adjust: exact !important;
                 font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
               }
-              .invoice-paper-sheet,
-              #architectural-schedule-printable-sheet,
-              #structural-engineering-printable-sheet,
-              #boq-schedule-printable-sheet,
-              .printable-sheet {
+              .print-page {
+                width: 194mm;
+                height: 281mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                margin: 0 auto;
+                break-after: avoid;
+              }
+              .print-page #univision-print-target {
                 box-shadow: none !important;
                 border: none !important;
-                margin: 0 auto !important;
-                padding: 16px !important;
-                width: 100% !important;
+                margin: 0 !important;
+                padding: 24px !important;
+                width: 194mm !important;
                 max-width: 194mm !important;
-                background: #ffffff !important;
                 box-sizing: border-box !important;
+                transform: scale(${fitScale}) !important;
+                transform-origin: center center !important;
+                background: #ffffff !important;
               }
               .no-print,
               button,
@@ -107,8 +124,8 @@ export function printInvoiceElement(
             </style>
           </head>
           <body>
-            <div style="display:flex; justify-content:center; width:100%; padding:0; margin:0;">
-              ${target.outerHTML}
+            <div class="print-page">
+              ${printTarget.outerHTML}
             </div>
           </body>
         </html>
@@ -121,6 +138,9 @@ export function printInvoiceElement(
       setTimeout(() => {
         try {
           iframe.contentWindow?.focus();
+          iframe.contentWindow?.addEventListener('afterprint', () => {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          }, { once: true });
           iframe.contentWindow?.print();
           resolve(true);
         } catch (iframeErr) {
@@ -134,7 +154,7 @@ export function printInvoiceElement(
             if (iframe.parentNode) {
               iframe.parentNode.removeChild(iframe);
             }
-          }, 3000);
+          }, 60000);
         }
       }, 300);
     } catch (err) {

@@ -146,6 +146,12 @@ export function downloadPrintableHTML(invoice: Invoice): boolean {
 
   try {
     const invoiceHtml = targetElement.outerHTML;
+    const sourceWidth = targetElement.offsetWidth || 800;
+    const sourceHeight = targetElement.offsetHeight || targetElement.scrollHeight;
+    const printableWidthPx = (194 * 96) / 25.4;
+    const printableHeightPx = (281 * 96) / 25.4;
+    const scaledHeight = sourceHeight * (printableWidthPx / sourceWidth);
+    const fitScale = Math.min(1, printableHeightPx / scaledHeight);
 
     const fullHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -161,7 +167,8 @@ export function downloadPrintableHTML(invoice: Invoice): boolean {
     @media print {
       body { background: white !important; padding: 0 !important; margin: 0 !important; }
       .no-print { display: none !important; }
-      .invoice-paper-sheet { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; width: 100% !important; }
+      .print-page { width: 194mm; height: 281mm; display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 0 auto; }
+      .print-page .invoice-paper-sheet { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 24px !important; max-width: 194mm !important; width: 194mm !important; box-sizing: border-box !important; transform: scale(${fitScale}) !important; transform-origin: center center !important; }
       @page { size: A4 portrait; margin: 8mm; }
     }
     .font-signature { font-family: 'Caveat', cursive; }
@@ -179,7 +186,7 @@ export function downloadPrintableHTML(invoice: Invoice): boolean {
     </button>
   </div>
 
-  <div class="w-full max-w-[850px]">
+  <div class="w-full max-w-[850px] print-page">
     ${invoiceHtml}
   </div>
 

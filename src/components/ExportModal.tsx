@@ -20,8 +20,73 @@ interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoice: Invoice;
-  onImportInvoice?: (imported: Invoice) => void;
+  onImportInvoice: (imported: Invoice) => void;
   onOpenPrintPreview?: () => void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function hasStringFields(value: unknown, fields: string[]): value is Record<string, unknown> {
+  return isRecord(value) && fields.every((field) => typeof value[field] === 'string');
+}
+
+function isInvoiceImport(value: unknown): value is Invoice {
+  if (!isRecord(value)) return false;
+  const validStatuses = ['draft', 'issued', 'deposit_paid', 'paid', 'overdue'];
+  const validPackageTypes = ['regular', 'premium', 'custom'];
+  const validCurrencies = ['GMD', 'USD', 'EUR', 'GBP', 'XOF'];
+  const clientFields = ['name', 'phone', 'email', 'address'];
+  const projectFields = ['projectName', 'projectAddress', 'cityProvince', 'postalCode'];
+  const companyFields = ['name', 'tagline', 'slogan', 'phone', 'email', 'address', 'bannerTitle', 'bannerValues', 'footerQuote'];
+  const paymentFields = ['bankName', 'accountName', 'accountNumber', 'reference'];
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.invoiceNumber === 'string' &&
+    typeof value.date === 'string' &&
+    validStatuses.includes(String(value.status)) &&
+    hasStringFields(value.client, clientFields) &&
+    hasStringFields(value.project, projectFields) &&
+    hasStringFields(value.company, companyFields) &&
+    hasStringFields(value.paymentDetails, paymentFields) &&
+    Array.isArray(value.floors) &&
+    value.floors.every((floor: unknown) =>
+      isRecord(floor) &&
+      typeof floor.id === 'string' &&
+      typeof floor.floorName === 'string' &&
+      typeof floor.area === 'number'
+    ) &&
+    Array.isArray(value.addons) &&
+    value.addons.every((addon: unknown) =>
+      isRecord(addon) &&
+      typeof addon.id === 'string' &&
+      typeof addon.name === 'string' &&
+      typeof addon.description === 'string' &&
+      typeof addon.amount === 'number' &&
+      typeof addon.enabled === 'boolean'
+    ) &&
+    validPackageTypes.includes(String(value.packageType)) &&
+    typeof value.packageRate === 'number' &&
+    typeof value.additionalNotes === 'string' &&
+    validCurrencies.includes(String(value.currency)) &&
+    (value.unit === 'm²' || value.unit === 'sq ft') &&
+    typeof value.discountPercent === 'number' &&
+    typeof value.taxPercent === 'number' &&
+    typeof value.depositPercent === 'number' &&
+    typeof value.depositPaidAmount === 'number' &&
+    Array.isArray(value.terms) &&
+    value.terms.every((term: unknown) => typeof term === 'string') &&
+    typeof value.clientSignature === 'string' &&
+    (value.clientSignatureType === 'draw' ||
+      value.clientSignatureType === 'type' ||
+      value.clientSignatureType === 'none') &&
+    typeof value.clientSignDate === 'string' &&
+    typeof value.contractorSigned === 'boolean' &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string'
+  );
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -159,21 +224,32 @@ Sukuta-jabang Highway, Sukuta Dalaba | +220 872104724
 
   // JSON import
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
     const fileReader = new FileReader();
-    if (e.target.files && e.target.files[0]) {
-      fileReader.readAsText(e.target.files[0], 'UTF-8');
-      fileReader.onload = (event) => {
-        try {
-          const parsed = JSON.parse(event.target?.result as string);
-          if (parsed && parsed.invoiceNumber && onImportInvoice) {
-            onImportInvoice(parsed);
-            onClose();
-          }
-        } catch {
-          alert('Invalid invoice JSON format.');
-        }
-      };
-    }
+    fileReader.onload = () => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(fileReader.result));
+      } catch {
+        alert('Invalid invoice JSON format. Select a JSON file exported from this app.');
+        return;
+      }
+
+      if (!isInvoiceImport(parsed)) {
+        alert('Invalid invoice JSON format. Select a JSON file exported from this app.');
+        return;
+      }
+
+      onImportInvoice(parsed);
+      onClose();
+    };
+    fileReader.onerror = () => {
+      alert('Unable to read the selected invoice file.');
+    };
+    fileReader.readAsText(file, 'UTF-8');
   };
 
   return (

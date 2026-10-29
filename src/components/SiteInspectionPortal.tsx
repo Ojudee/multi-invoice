@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   HardHat,
   CheckCircle2,
@@ -26,6 +26,7 @@ import { DEFAULT_COMPANY, SITE_INSPECTION_PACKAGE } from '../data/constants';
 import { printInvoiceElement } from '../utils/printHelper';
 import { Invoice } from '../types';
 import { DepartmentOfficialsCard } from './DepartmentOfficialsCard';
+import { usePortalStorage } from '../services/portalStorage';
 
 export interface InspectionCheckItem {
   id: string;
@@ -65,7 +66,7 @@ export interface SiteInspectionProject {
   siteLocation: string;
   plotNumber: string;
   inspectionDate: string;
-  inspectionStage: 'Foundation & Groundworks' | 'Columns & Beams Framing' | 'Pre-Pour Slab Inspection' | 'Roof Structure & Trusses' | 'Finishes & Final Handover';
+  inspectionStage: string;
   inspectorName: string;
   inspectorTitle: string;
   contractorName: string;
@@ -155,32 +156,35 @@ interface SiteInspectionPortalProps {
   onSwitchPortal?: (portal: 'invoices' | 'architectural' | 'structural' | 'boq' | 'packages' | 'inspection') => void;
 }
 
+function isSiteInspectionProject(value: unknown): value is SiteInspectionProject {
+  if (typeof value !== 'object' || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === 'string' &&
+    typeof project.reportNumber === 'string' &&
+    typeof project.projectTitle === 'string' &&
+    typeof project.clientName === 'string' &&
+    typeof project.feeAmount === 'number' &&
+    Array.isArray(project.checks) &&
+    Array.isArray(project.actionItems) &&
+    Array.isArray(project.observations)
+  );
+}
+
 export function SiteInspectionPortal({
   isStandaloneWindow = false,
   onPopoutWindow,
   onGenerateInvoice,
   onSwitchPortal,
 }: SiteInspectionPortalProps) {
-  const [project, setProject] = useState<SiteInspectionProject>(() => {
-    try {
-      const saved = localStorage.getItem('univision_active_inspection_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return INITIAL_SITE_INSPECTION_PROJECT;
-  });
+  const [project, setProject, saveStatus] = usePortalStorage(
+    'univision_active_inspection_v1',
+    INITIAL_SITE_INSPECTION_PROJECT,
+    isSiteInspectionProject
+  );
 
   const [activeTab, setActiveTab] = useState<'checklist' | 'observations' | 'actions' | 'report'>('checklist');
   const [notification, setNotification] = useState<string>('');
-
-  // Persist project changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('univision_active_inspection_v1', JSON.stringify(project));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.warn('Inspection storage issue', e);
-    }
-  }, [project]);
 
   const handleUpdate = <K extends keyof SiteInspectionProject>(key: K, value: SiteInspectionProject[K]) => {
     setProject((prev) => ({
@@ -287,7 +291,7 @@ export function SiteInspectionPortal({
       floors: [
         {
           id: `fl-ins-${Date.now()}`,
-          floorName: `04 Site Inspection & Reports Package (${project.inspectionStage})`,
+          floorName: `04 Site Inspection & Reports Package${project.inspectionStage ? ` (${project.inspectionStage})` : ''}`,
           area: 1,
           customRate: project.feeAmount,
         },
@@ -305,8 +309,8 @@ export function SiteInspectionPortal({
           enabled: true,
           tier: 'standard',
           fee: project.feeAmount,
-          consultationTitle: `SITE INSPECTION & TECHNICAL CONSULTATION (${project.inspectionStage.toUpperCase()})`,
-          inspectionScope: project.siteLocation || 'On-Site Field Visit & Terrain Assessment',
+          consultationTitle: `SITE INSPECTION & TECHNICAL CONSULTATION${project.inspectionStage ? ` (${project.inspectionStage.toUpperCase()})` : ''}`,
+          inspectionScope: project.siteLocation,
           servicesList: [
             'Site Inspection and Compliance Audit',
             'Checklist Verification & Stage Review',
@@ -325,12 +329,8 @@ export function SiteInspectionPortal({
       setNotification(`Created Site Inspection Invoice for GMD ${project.feeAmount.toLocaleString()}!`);
       setTimeout(() => setNotification(''), 4000);
     } else {
-      try {
-        localStorage.setItem('univision_pending_invoice_sync', JSON.stringify(invoiceData));
-        window.dispatchEvent(new Event('storage'));
-        setNotification('Inspection invoice synced to Invoice Studio!');
-        setTimeout(() => setNotification(''), 4000);
-      } catch {}
+      setNotification('Invoice Studio is unavailable. Reopen this portal from the Invoice Studio to create an invoice.');
+      setTimeout(() => setNotification(''), 5000);
     }
   };
 
@@ -365,6 +365,12 @@ export function SiteInspectionPortal({
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-400/40">
                   PACKAGE 04 • GMD {project.feeAmount.toLocaleString()}
+                </span>
+                <span
+                  role="status"
+                  className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -515,17 +521,21 @@ export function SiteInspectionPortal({
               </div>
               <div>
                 <label className="text-[11px] text-slate-400 font-medium block">Inspection Stage</label>
-                <select
+                <input
+                  type="text"
                   value={project.inspectionStage}
-                  onChange={(e) => handleUpdate('inspectionStage', e.target.value as SiteInspectionProject['inspectionStage'])}
+                  onChange={(e) => handleUpdate('inspectionStage', e.target.value)}
+                  list="inspection-stage-options"
+                  placeholder="Enter inspection stage"
                   className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-amber-300 font-semibold focus:outline-none focus:border-amber-500"
-                >
-                  <option value="Foundation & Groundworks">Foundation & Groundworks</option>
-                  <option value="Columns & Beams Framing">Columns & Beams Framing</option>
-                  <option value="Pre-Pour Slab Inspection">Pre-Pour Slab Inspection</option>
-                  <option value="Roof Structure & Trusses">Roof Structure & Trusses</option>
-                  <option value="Finishes & Final Handover">Finishes & Final Handover</option>
-                </select>
+                />
+                <datalist id="inspection-stage-options">
+                  <option value="Foundation & Groundworks" />
+                  <option value="Columns & Beams Framing" />
+                  <option value="Pre-Pour Slab Inspection" />
+                  <option value="Roof Structure & Trusses" />
+                  <option value="Finishes & Final Handover" />
+                </datalist>
               </div>
             </div>
 

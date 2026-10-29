@@ -22,6 +22,20 @@ export interface PortalConfig {
   isCombinedMode?: boolean;
 }
 
+export interface PortalStorageKeys {
+  invoices: string;
+  activeId: string;
+  archived: string;
+}
+
+export function getPortalStorageKeys(portalKey: PortalKey): PortalStorageKeys {
+  return {
+    invoices: `univision_portal_${portalKey}_invoices_v5`,
+    activeId: `univision_portal_${portalKey}_active_id_v5`,
+    archived: `univision_portal_${portalKey}_archived_v5`,
+  };
+}
+
 export const PORTAL_CONFIGS: Record<PortalKey, PortalConfig> = {
   general: {
     key: 'general',
@@ -120,7 +134,7 @@ export const PORTAL_CONFIGS: Record<PortalKey, PortalConfig> = {
  */
 export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
   try {
-    const storageKey = `univision_portal_${portalKey}_invoices_v5`;
+    const storageKey = getPortalStorageKeys(portalKey).invoices;
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -183,12 +197,17 @@ export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
 /**
  * Saves invoices for a specific portal to isolated storage
  */
-export function savePortalInvoices(portalKey: PortalKey, invoices: Invoice[]): void {
+export function savePortalInvoices(portalKey: PortalKey, invoices: Invoice[]): boolean {
   try {
-    const storageKey = `univision_portal_${portalKey}_invoices_v5`;
-    localStorage.setItem(storageKey, JSON.stringify(invoices));
+    const storageKey = getPortalStorageKeys(portalKey).invoices;
+    const serialized = JSON.stringify(invoices);
+    if (localStorage.getItem(storageKey) !== serialized) {
+      localStorage.setItem(storageKey, serialized);
+    }
+    return true;
   } catch (e) {
     console.warn(`Failed to save ${portalKey} invoices to storage`, e);
+    return false;
   }
 }
 
@@ -197,21 +216,27 @@ export function savePortalInvoices(portalKey: PortalKey, invoices: Invoice[]): v
  */
 export function loadPortalActiveId(portalKey: PortalKey, defaultId: string): string {
   try {
-    const key = `univision_portal_${portalKey}_active_id_v5`;
+    const key = getPortalStorageKeys(portalKey).activeId;
     const saved = localStorage.getItem(key);
     if (saved) return saved;
-  } catch {}
+  } catch (e) {
+    console.error(`Failed to load ${portalKey} active invoice ID`, e);
+  }
   return defaultId;
 }
 
 /**
  * Saves active invoice ID for a specific portal
  */
-export function savePortalActiveId(portalKey: PortalKey, id: string): void {
+export function savePortalActiveId(portalKey: PortalKey, id: string): boolean {
   try {
-    const key = `univision_portal_${portalKey}_active_id_v5`;
-    localStorage.setItem(key, id);
-  } catch {}
+    const key = getPortalStorageKeys(portalKey).activeId;
+    if (localStorage.getItem(key) !== id) localStorage.setItem(key, id);
+    return true;
+  } catch (e) {
+    console.warn(`Failed to save ${portalKey} active invoice ID`, e);
+    return false;
+  }
 }
 
 /**
@@ -219,22 +244,29 @@ export function savePortalActiveId(portalKey: PortalKey, id: string): void {
  */
 export function loadPortalArchived(portalKey: PortalKey): Invoice[] {
   try {
-    const key = `univision_portal_${portalKey}_archived_v5`;
+    const key = getPortalStorageKeys(portalKey).archived;
     const saved = localStorage.getItem(key);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) return parsed;
     }
-  } catch {}
+  } catch (e) {
+    console.error(`Failed to load ${portalKey} archived invoices`, e);
+  }
   return [];
 }
 
 /**
  * Saves archived invoices for a specific portal
  */
-export function savePortalArchived(portalKey: PortalKey, archived: Invoice[]): void {
+export function savePortalArchived(portalKey: PortalKey, archived: Invoice[]): boolean {
   try {
-    const key = `univision_portal_${portalKey}_archived_v5`;
-    localStorage.setItem(key, JSON.stringify(archived));
-  } catch {}
+    const key = getPortalStorageKeys(portalKey).archived;
+    const serialized = JSON.stringify(archived);
+    if (localStorage.getItem(key) !== serialized) localStorage.setItem(key, serialized);
+    return true;
+  } catch (e) {
+    console.warn(`Failed to save ${portalKey} archived invoices`, e);
+    return false;
+  }
 }

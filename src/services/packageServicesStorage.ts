@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export type PackageCategory = 'architectural' | 'structural' | 'boq';
+export type PackageStorageScope = 'general' | 'architectural' | 'structural' | 'boq' | 'inspection';
 
 export interface ServicePackageConfig {
   regular: string[];
@@ -86,21 +87,26 @@ export const ALL_PACKAGE_DEFAULTS: Record<PackageCategory, ServicePackageConfig>
   },
 };
 
-const STORAGE_KEYS: Record<PackageCategory, string> = {
+const LEGACY_STORAGE_KEYS: Record<PackageCategory, string> = {
   architectural: 'univision_arch_service_packages_v1',
   structural: 'univision_struct_service_packages_v1',
   boq: 'univision_boq_service_packages_v1',
 };
 
-const EVENT_NAMES: Record<PackageCategory, string> = {
-  architectural: 'univision_arch_services_changed',
-  structural: 'univision_struct_services_changed',
-  boq: 'univision_boq_services_changed',
-};
+function getStorageKey(category: PackageCategory, scope: PackageStorageScope): string {
+  return `univision_${scope}_${category}_service_packages_v2`;
+}
 
-export function getStoredPackageServices(category: PackageCategory): ServicePackageConfig {
+function getEventName(category: PackageCategory, scope: PackageStorageScope): string {
+  return `univision_${scope}_${category}_services_changed`;
+}
+
+export function getStoredPackageServices(
+  category: PackageCategory,
+  scope: PackageStorageScope = category
+): ServicePackageConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS[category]);
+    const raw = localStorage.getItem(getStorageKey(category, scope)) || localStorage.getItem(LEGACY_STORAGE_KEYS[category]);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed?.regular) && Array.isArray(parsed?.premiumExtra)) {
@@ -111,7 +117,7 @@ export function getStoredPackageServices(category: PackageCategory): ServicePack
       }
     }
   } catch (err) {
-    console.error(`Error reading ${category} services from localStorage`, err);
+    console.error(`Error reading ${scope} ${category} services from localStorage`, err);
   }
   return {
     regular: [...ALL_PACKAGE_DEFAULTS[category].regular],
@@ -119,69 +125,95 @@ export function getStoredPackageServices(category: PackageCategory): ServicePack
   };
 }
 
-export function saveStoredPackageServices(category: PackageCategory, config: ServicePackageConfig): void {
+export function saveStoredPackageServices(
+  category: PackageCategory,
+  config: ServicePackageConfig,
+  scope: PackageStorageScope = category
+): boolean {
   try {
-    localStorage.setItem(STORAGE_KEYS[category], JSON.stringify(config));
-    window.dispatchEvent(new CustomEvent(EVENT_NAMES[category], { detail: config }));
-    window.dispatchEvent(new Event('storage'));
+    localStorage.setItem(getStorageKey(category, scope), JSON.stringify(config));
+    window.dispatchEvent(new CustomEvent(getEventName(category, scope), { detail: config }));
+    return true;
   } catch (err) {
-    console.error(`Error saving ${category} services to localStorage`, err);
+    console.error(`Error saving ${scope} ${category} services to localStorage`, err);
+    return false;
   }
 }
 
-export function resetPackageServicesToDefaults(category: PackageCategory): ServicePackageConfig {
+export function resetPackageServicesToDefaults(
+  category: PackageCategory,
+  scope: PackageStorageScope = category
+): boolean {
   const defaults: ServicePackageConfig = {
     regular: [...ALL_PACKAGE_DEFAULTS[category].regular],
     premiumExtra: [...ALL_PACKAGE_DEFAULTS[category].premiumExtra],
   };
-  saveStoredPackageServices(category, defaults);
-  return defaults;
+  return saveStoredPackageServices(category, defaults, scope);
 }
 
-export function usePackageServices(category: PackageCategory = 'boq') {
-  const [config, setConfig] = useState<ServicePackageConfig>(() => getStoredPackageServices(category));
+export function usePackageServices(
+  category: PackageCategory = 'boq',
+  scope: PackageStorageScope = category
+) {
+  const [storedState, setStoredState] = useState(() => ({
+    category,
+    scope,
+    config: getStoredPackageServices(category, scope),
+  }));
+  const config =
+    storedState.category === category && storedState.scope === scope
+      ? storedState.config
+      : getStoredPackageServices(category, scope);
 
   useEffect(() => {
-    setConfig(getStoredPackageServices(category));
+    setStoredState({ category, scope, config: getStoredPackageServices(category, scope) });
 
-    const handleUpdate = () => {
-      setConfig(getStoredPackageServices(category));
+    const handleCustomUpdate = () => {
+      setStoredState({ category, scope, config: getStoredPackageServices(category, scope) });
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && event.key === getStorageKey(category, scope)) {
+        setStoredState({ category, scope, config: getStoredPackageServices(category, scope) });
+      }
     };
 
-    const eventName = EVENT_NAMES[category];
-    window.addEventListener(eventName, handleUpdate);
-    window.addEventListener('storage', handleUpdate);
+    const eventName = getEventName(category, scope);
+    window.addEventListener(eventName, handleCustomUpdate);
+    window.addEventListener('storage', handleStorage);
     return () => {
-      window.removeEventListener(eventName, handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener(eventName, handleCustomUpdate);
+      window.removeEventListener('storage', handleStorage);
     };
-  }, [category]);
+  }, [category, scope]);
 
   const updateAllServices = useCallback(
-    (newRegular: string[], newPremiumExtra: string[]) => {
+    (newRegular: string[], newPremiumExtra: string[]): boolean => {
       const nextConfig = { regular: newRegular, premiumExtra: newPremiumExtra };
-      setConfig(nextConfig);
-      saveStoredPackageServices(category, nextConfig);
+      if (!saveStoredPackageServices(category, nextConfig, scope)) return false;
+      setStoredState({ category, scope, config: nextConfig });
+      return true;
     },
-    [category]
+    [category, scope]
   );
 
   const updateRegularServices = useCallback(
-    (newRegular: string[]) => {
+    (newRegular: string[]): boolean => {
       const nextConfig = { ...config, regular: newRegular };
-      setConfig(nextConfig);
-      saveStoredPackageServices(category, nextConfig);
+      if (!saveStoredPackageServices(category, nextConfig, scope)) return false;
+      setStoredState({ category, scope, config: nextConfig });
+      return true;
     },
-    [category, config]
+    [category, config, scope]
   );
 
   const updatePremiumExtraServices = useCallback(
-    (newPremiumExtra: string[]) => {
+    (newPremiumExtra: string[]): boolean => {
       const nextConfig = { ...config, premiumExtra: newPremiumExtra };
-      setConfig(nextConfig);
-      saveStoredPackageServices(category, nextConfig);
+      if (!saveStoredPackageServices(category, nextConfig, scope)) return false;
+      setStoredState({ category, scope, config: nextConfig });
+      return true;
     },
-    [category, config]
+    [category, config, scope]
   );
 
   const addRegularService = useCallback(
@@ -242,10 +274,16 @@ export function usePackageServices(category: PackageCategory = 'boq') {
     [config.premiumExtra, updatePremiumExtraServices]
   );
 
-  const resetDefaults = useCallback(() => {
-    const defaults = resetPackageServicesToDefaults(category);
-    setConfig(defaults);
-  }, [category]);
+  const resetDefaults = useCallback((): boolean => {
+    const saved = resetPackageServicesToDefaults(category, scope);
+    if (!saved) return false;
+    const defaults = {
+      regular: [...ALL_PACKAGE_DEFAULTS[category].regular],
+      premiumExtra: [...ALL_PACKAGE_DEFAULTS[category].premiumExtra],
+    };
+    setStoredState({ category, scope, config: defaults });
+    return true;
+  }, [category, scope]);
 
   const premiumAllServices = [...config.regular, ...config.premiumExtra];
 

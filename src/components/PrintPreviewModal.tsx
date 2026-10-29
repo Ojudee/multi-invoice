@@ -154,7 +154,7 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
 
     if (mode === 'page') {
       const calculatedScale = Math.min(vw / paperW, vh / measuredH);
-      const clamped = Math.min(1.2, Math.max(0.3, Math.round(calculatedScale * 100) / 100));
+      const clamped = Math.min(1.2, Math.max(0.1, Math.round(calculatedScale * 100) / 100));
       setScale(clamped);
       setFitMode('page');
     } else if (mode === 'width') {
@@ -217,46 +217,14 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
 
   const handleSystemPrint = async () => {
     setIsPrinting(true);
-    setStatusMessage('Preparing print copy & opening printer dialog...');
-
-    // 1. Trigger isolated iframe print (renders exact styled document)
+    setStatusMessage('Preparing fitted A4 print...');
     try {
-      printInvoiceElement('univision-invoice-preview-sheet');
-    } catch (e) {
-      console.warn('Iframe print error', e);
-    }
-
-    // 2. Also attempt window.print() after small delay
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (err) {
-        console.warn('System window.print blocked', err);
-      }
-    }, 200);
-
-    // 3. Immediately compile and download high-resolution centered A4 PDF
-    try {
-      setStatusMessage('Saving centered A4 PDF print file...');
-      const cleanNames = selectedNames.map((s) => s.replace(/[^a-zA-Z0-9]/g, '_')).join('_');
-      const filename = `${invoice.invoiceNumber}_${cleanNames || 'Invoice'}.pdf`;
-
-      const success = await downloadInvoicePDF(filteredInvoice, {
-        filename,
-        onProgress: (msg) => setStatusMessage(msg),
-      });
-
-      if (success) {
-        setStatusMessage('Print command sent & A4 PDF downloaded!');
-        setPrintNotice(
-          'Print dialog triggered! A centered high-resolution A4 PDF has also been saved to your downloads for direct printing.'
-        );
-      } else {
-        setStatusMessage('Print command sent');
-      }
+      const success = await printInvoiceElement('univision-invoice-preview-sheet');
+      setStatusMessage(success ? 'A4 print dialog opened.' : 'Unable to prepare the print document.');
+      setPrintNotice(success ? 'The preview has been fitted to a single A4 page.' : null);
     } catch (err) {
-      console.error('Error generating PDF during print', err);
-      setStatusMessage('Print command sent');
+      console.error('Error preparing print document', err);
+      setStatusMessage('Print preparation failed.');
     } finally {
       setIsPrinting(false);
       setTimeout(() => setStatusMessage(''), 5000);

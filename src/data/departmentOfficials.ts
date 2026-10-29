@@ -272,27 +272,42 @@ export function getStoredOfficials(): Record<DepartmentKey, DepartmentOfficial[]
   return DEFAULT_DEPARTMENT_OFFICIALS;
 }
 
-export function saveStoredOfficials(officials: Record<DepartmentKey, DepartmentOfficial[]>): void {
+export function saveStoredOfficials(officials: Record<DepartmentKey, DepartmentOfficial[]>): boolean {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(officials));
-    window.dispatchEvent(new Event('univision_officials_updated'));
+    const serialized = JSON.stringify(officials);
+    if (localStorage.getItem(STORAGE_KEY) !== serialized) {
+      localStorage.setItem(STORAGE_KEY, serialized);
+      window.dispatchEvent(new Event('univision_officials_updated'));
+    }
+    return true;
   } catch (e) {
     console.warn('Failed to save officials to storage', e);
+    return false;
   }
 }
 
 export function useDepartmentOfficials(department?: DepartmentKey) {
   const [allOfficials, setAllOfficials] = useState<Record<DepartmentKey, DepartmentOfficial[]>>(getStoredOfficials);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'error'>('saved');
+
+  useEffect(() => {
+    setSaveStatus(saveStoredOfficials(allOfficials) ? 'saved' : 'error');
+  }, [allOfficials]);
 
   useEffect(() => {
     const handleUpdate = () => {
       setAllOfficials(getStoredOfficials());
     };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && event.key === STORAGE_KEY) {
+        setAllOfficials(getStoredOfficials());
+      }
+    };
     window.addEventListener('univision_officials_updated', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('univision_officials_updated', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -301,45 +316,45 @@ export function useDepartmentOfficials(department?: DepartmentKey) {
     id: string,
     updates: Partial<DepartmentOfficial>
   ) => {
-    setAllOfficials((prev) => {
-      const updatedList = (prev[dept] || []).map((off) => (off.id === id ? { ...off, ...updates } : off));
-      const next = { ...prev, [dept]: updatedList };
-      saveStoredOfficials(next);
-      return next;
-    });
+    setAllOfficials((prev) => ({
+      ...prev,
+      [dept]: (prev[dept] || []).map((off) => (off.id === id ? { ...off, ...updates } : off)),
+    }));
   };
 
   const addOfficial = (dept: DepartmentKey, newOfficial: Omit<DepartmentOfficial, 'id' | 'department'>) => {
-    setAllOfficials((prev) => {
-      const created: DepartmentOfficial = {
-        ...newOfficial,
-        id: `${dept}-off-${Date.now()}`,
-        department: dept,
-      };
-      const next = { ...prev, [dept]: [...(prev[dept] || []), created] };
-      saveStoredOfficials(next);
-      return next;
-    });
+    const created: DepartmentOfficial = {
+      ...newOfficial,
+      id: `${dept}-off-${Date.now()}`,
+      department: dept,
+    };
+    setAllOfficials((prev) => ({
+      ...prev,
+      [dept]: [...(prev[dept] || []), created],
+    }));
   };
 
   const deleteOfficial = (dept: DepartmentKey, id: string) => {
-    setAllOfficials((prev) => {
-      const next = { ...prev, [dept]: (prev[dept] || []).filter((off) => off.id !== id) };
-      saveStoredOfficials(next);
-      return next;
-    });
+    setAllOfficials((prev) => ({
+      ...prev,
+      [dept]: (prev[dept] || []).filter((off) => off.id !== id),
+    }));
   };
 
   const resetToDefaults = (dept?: DepartmentKey) => {
     if (dept) {
-      setAllOfficials((prev) => {
-        const next = { ...prev, [dept]: DEFAULT_DEPARTMENT_OFFICIALS[dept] };
-        saveStoredOfficials(next);
-        return next;
-      });
+      setAllOfficials((prev) => ({
+        ...prev,
+        [dept]: [...DEFAULT_DEPARTMENT_OFFICIALS[dept]],
+      }));
     } else {
-      setAllOfficials(DEFAULT_DEPARTMENT_OFFICIALS);
-      saveStoredOfficials(DEFAULT_DEPARTMENT_OFFICIALS);
+      setAllOfficials({
+        architectural: [...DEFAULT_DEPARTMENT_OFFICIALS.architectural],
+        structural: [...DEFAULT_DEPARTMENT_OFFICIALS.structural],
+        boq: [...DEFAULT_DEPARTMENT_OFFICIALS.boq],
+        inspection: [...DEFAULT_DEPARTMENT_OFFICIALS.inspection],
+        commercial: [...DEFAULT_DEPARTMENT_OFFICIALS.commercial],
+      });
     }
   };
 
@@ -350,5 +365,6 @@ export function useDepartmentOfficials(department?: DepartmentKey) {
     addOfficial,
     deleteOfficial,
     resetToDefaults,
+    saveStatus,
   };
 }

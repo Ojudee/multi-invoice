@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   FileSpreadsheet,
   Calculator,
@@ -35,12 +35,29 @@ import { calculateBOQ, exportBOQToCSV } from '../utils/boqCalculations';
 import { UnivisionLogo } from './UnivisionLogo';
 import { printInvoiceElement } from '../utils/printHelper';
 import { DepartmentOfficialsCard } from './DepartmentOfficialsCard';
+import { usePortalStorage } from '../services/portalStorage';
+import { PackageCategory } from '../services/packageServicesStorage';
 
 interface BOQPortalProps {
   isStandaloneWindow?: boolean;
   onPopoutWindow?: () => void;
   onGenerateInvoice?: (invoiceData: Partial<Invoice>) => void;
   onSwitchPortal?: (portal: 'invoices' | 'architectural' | 'structural' | 'boq' | 'packages' | 'inspection') => void;
+  onPackageServicesSaved: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
+}
+
+function isBOQProject(value: unknown): value is BOQProject {
+  if (typeof value !== 'object' || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === 'string' &&
+    typeof project.boqNumber === 'string' &&
+    typeof project.title === 'string' &&
+    typeof project.clientName === 'string' &&
+    typeof project.grossFloorArea === 'number' &&
+    Array.isArray(project.items) &&
+    Array.isArray(project.notes)
+  );
 }
 
 export function BOQPortal({
@@ -48,19 +65,13 @@ export function BOQPortal({
   onPopoutWindow,
   onGenerateInvoice,
   onSwitchPortal,
+  onPackageServicesSaved,
 }: BOQPortalProps) {
-  const [project, setProject] = useState<BOQProject>(() => {
-    try {
-      const saved = localStorage.getItem('univision_active_boq_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.clientName !== 'Alhaji Musa Ceesay') {
-          return parsed;
-        }
-      }
-    } catch {}
-    return INITIAL_BOQ_PROJECT;
-  });
+  const [project, setProject, saveStatus] = usePortalStorage(
+    'univision_active_boq_v1',
+    INITIAL_BOQ_PROJECT,
+    isBOQProject
+  );
 
   const [activeTab, setActiveTab] = useState<'tiers' | 'items' | 'summary' | 'print'>('items');
   const [selectedSection, setSelectedSection] = useState<BOQSectionCode | 'ALL'>('ALL');
@@ -74,16 +85,6 @@ export function BOQPortal({
     premiumExtraServices,
     premiumAllServices,
   } = useBOQServices();
-
-  // Persist project and dispatch storage event for cross-window syncing
-  useEffect(() => {
-    try {
-      localStorage.setItem('univision_active_boq_v1', JSON.stringify(project));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.warn('Storage sync error', e);
-    }
-  }, [project]);
 
   const calculations = calculateBOQ(project);
   const flyerFee = getBOQPackageFee(project.grossFloorArea, flyerTierType);
@@ -231,12 +232,8 @@ export function BOQPortal({
       setNotification(`Created invoice from BOQ (${mode === 'consultancy_package' ? 'Flyer Package' : 'Construction Schedule'})!`);
       setTimeout(() => setNotification(''), 4000);
     } else {
-      try {
-        localStorage.setItem('univision_pending_invoice_sync', JSON.stringify(invoiceData));
-        window.dispatchEvent(new Event('storage'));
-        setNotification('Invoice synced! Switch to Invoice Studio to view.');
-        setTimeout(() => setNotification(''), 4000);
-      } catch {}
+      setNotification('Invoice Studio is unavailable. Reopen this portal from the Invoice Studio to create an invoice.');
+      setTimeout(() => setNotification(''), 5000);
     }
   };
 
@@ -276,6 +273,12 @@ export function BOQPortal({
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-400/30">
                   PACKAGE 03
+                </span>
+                <span
+                  role="status"
+                  className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -1078,6 +1081,8 @@ export function BOQPortal({
       <BOQServicesEditorModal
         isOpen={isServicesModalOpen}
         onClose={() => setIsServicesModalOpen(false)}
+        storageScope="boq"
+        onSaved={onPackageServicesSaved}
       />
     </div>
   );

@@ -113,6 +113,7 @@ export interface Invoice {
 
   // Separate Packages Configuration in Invoice Studio
   packagesConfig?: InvoicePackagesConfig;
+  standardsAndDeliverables?: string[];
   activePrintFilter?: PackageSelectionMap;
   invoiceCategory?: 'architectural' | 'structural' | 'boq' | 'inspection' | 'multi_package';
 }
@@ -183,4 +184,3 @@ export interface PackageDefinition {
   description: string;
   features: string[];
 }
-

@@ -151,11 +151,6 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
             </div>
             <div className="text-lg md:text-xl font-black tracking-wider text-amber-400 leading-tight flex items-center gap-2">
               <span>INVOICE</span>
-              {isSinglePackage && singlePackageKey && (
-                <span className="text-[10px] font-bold text-amber-300 bg-amber-950/80 border border-amber-500/50 px-2 py-0.5 rounded tracking-normal uppercase">
-                  Standalone: {allPkgSummaries[singlePackageKey]?.title || singlePackageKey}
-                </span>
-              )}
               {selectedNames.length > 1 && selectedNames.length < 5 && (
                 <span className="text-[10px] font-bold text-blue-200 bg-blue-900/80 border border-blue-400/40 px-2 py-0.5 rounded tracking-normal uppercase">
                   Combined ({selectedNames.length} Packages)
@@ -257,6 +252,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
       {(() => {
         const isDedicatedBOQ = isSinglePackage && singlePackageKey === 'boq';
         const isDedicatedInspection = isSinglePackage && singlePackageKey === 'inspection';
+        const isDedicatedArchitectural = isSinglePackage && singlePackageKey === 'architectural';
         const isBOQInvoice = activeInvoice.invoiceCategory === 'boq' || activeInvoice.invoiceNumber.includes('BOQ');
         const isInspectionInvoice = activeInvoice.invoiceCategory === 'inspection' || activeInvoice.invoiceNumber.includes('INS');
         const isQuantitySchedule = isDedicatedBOQ || isDedicatedInspection || isBOQInvoice || isInspectionInvoice;
@@ -277,6 +273,8 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                     ? 'BILLS OF QUANTITIES (BOQ) SCHEDULE'
                     : isDedicatedInspection || isInspectionInvoice
                     ? 'SITE INSPECTION & REPORTS SCHEDULE'
+                    : isDedicatedArchitectural
+                    ? 'ARCHITECTURAL DRAWING PACKAGE'
                     : isSinglePackage && singlePackageKey === 'structural'
                     ? 'STRUCTURAL ENGINEERING DRAWING SCHEDULE'
                     : selectedNames.length > 1
@@ -295,18 +293,22 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
 
             {/* Table Header */}
             <div className="grid grid-cols-12 bg-[#0b2341] text-white text-[10.5px] font-bold py-1.5 px-3 uppercase tracking-wider">
-              <div className="col-span-5 text-left">ITEM / DELIVERABLE SCOPE</div>
-              <div className="col-span-2 text-right">
-                {isQuantitySchedule ? 'QTY' : 'AREA / SCOPE'}
+              <div className="col-span-6 min-w-0 text-left">
+                {isDedicatedArchitectural ? 'FLOOR / AREA' : 'ITEM / DELIVERABLE SCOPE'}
               </div>
-              <div className="col-span-2 text-right">
+              <div className="col-span-2 min-w-0 text-right">
+                {isDedicatedArchitectural ? `AREA (${activeInvoice.unit})` : isQuantitySchedule ? 'QTY' : 'AREA / SCOPE'}
+              </div>
+              <div className="col-span-2 min-w-0 text-right">
                 {isDedicatedBOQ || isBOQInvoice
                   ? `FIXED RATE (${activeInvoice.currency})`
                   : isDedicatedInspection || isInspectionInvoice
                   ? `RATE / VISIT (${activeInvoice.currency})`
+                  : isDedicatedArchitectural
+                  ? `RATE (${activeInvoice.currency}/${activeInvoice.unit})`
                   : `RATE (${activeInvoice.currency})`}
               </div>
-              <div className="col-span-3 text-right">AMOUNT ({activeInvoice.currency})</div>
+              <div className="col-span-2 min-w-0 text-right">AMOUNT ({activeInvoice.currency})</div>
             </div>
 
             {/* Floor / Item Rows */}
@@ -341,9 +343,9 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                     <div
                       className="grid grid-cols-12 py-1.5 px-3 items-start hover:bg-slate-50/70 transition-colors text-[11px]"
                     >
-                      <div className="col-span-5 font-medium text-slate-900 pr-2">
-                        <div>{floor.floorName}</div>
-                        {floor.deliverables && floor.deliverables.length > 0 && (
+                      <div className="col-span-6 min-w-0 font-medium text-slate-900 pr-2 break-words">
+                        <div className="break-words">{floor.floorName.replace(/^\[Architectural\]\s*/i, '')}</div>
+                        {!isDedicatedArchitectural && floor.deliverables && floor.deliverables.length > 0 && (
                           <ul className="mt-1 space-y-0.5 text-[9.5px] text-slate-600 pl-1">
                             {floor.deliverables.slice(0, 4).map((del, dIdx) => (
                               <li key={dIdx} className="flex items-start gap-1 leading-tight">
@@ -359,13 +361,13 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                           </ul>
                         )}
                       </div>
-                      <div className="col-span-2 text-right font-mono tabular-nums text-slate-700 text-[10.5px]">
+                      <div className="col-span-2 min-w-0 text-right font-mono tabular-nums text-slate-700 text-[10.5px] leading-tight break-words">
                         {areaOrQtyDisplay}
                       </div>
-                      <div className="col-span-2 text-right font-mono tabular-nums text-slate-600 text-[10.5px]">
+                      <div className="col-span-2 min-w-0 text-right font-mono tabular-nums text-slate-600 text-[10.5px] leading-tight break-words">
                         {rateDisplay}
                       </div>
-                      <div className="col-span-3 text-right font-mono font-semibold tabular-nums text-slate-900">
+                      <div className="col-span-2 min-w-0 text-right font-mono font-semibold tabular-nums text-slate-900 text-[10.5px] leading-tight break-words">
                         {formatCurrency(floorAmount, activeInvoice.currency)}
                       </div>
                     </div>
@@ -375,7 +377,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
 
               {/* Table Sub-sum */}
               <div className="grid grid-cols-12 py-1.5 px-3 bg-slate-50 font-semibold text-xs border-t-2 border-slate-300">
-                <div className="col-span-5 text-slate-700 uppercase tracking-wide text-[10.5px]">
+                <div className="col-span-6 text-slate-700 uppercase tracking-wide text-[10.5px]">
                   {isQuantitySchedule ? 'Schedule Total' : 'Package Subtotal'}
                 </div>
                 <div className="col-span-2 text-right font-mono tabular-nums text-slate-800 text-[11px]">
@@ -386,7 +388,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                     : '--'}
                 </div>
                 <div className="col-span-2 text-right text-slate-400">--</div>
-                <div className="col-span-3 text-right font-mono font-bold tabular-nums text-[#0b2341] text-[11.5px]">
+                <div className="col-span-2 text-right font-mono font-bold tabular-nums text-[#0b2341] text-[11.5px]">
                   {formatCurrency(calculations.drawingPackageTotal, activeInvoice.currency)}
                 </div>
               </div>
@@ -395,7 +397,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
             {/* Additional notes container */}
             <div className="p-2 border-t border-slate-200 bg-slate-50/50 text-xs">
               <div className="font-semibold text-slate-600 text-[10.5px] uppercase tracking-wide mb-0.5">
-                ADDITIONAL NOTES & SPECIFICATIONS:
+                {isDedicatedArchitectural ? 'ADDITIONAL NOTES (IF ANY):' : 'ADDITIONAL NOTES & SPECIFICATIONS:'}
               </div>
               <div className="min-h-[20px] text-slate-700 border border-slate-200 bg-white rounded-xs p-1.5 leading-relaxed text-[10.5px]">
                 {activeInvoice.additionalNotes || (
@@ -555,7 +557,7 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                 <div className="col-span-12 md:col-span-8 border border-slate-300 rounded-sm overflow-hidden flex flex-col text-xs">
                   <div className="bg-[#0b2341] text-white px-2.5 py-1.5 flex items-center justify-between">
                     <span className="font-bold text-[10.5px] tracking-wider uppercase">
-                      {activeInvoice.packagesConfig?.inspection?.consultationTitle || 'SITE INSPECTION & TECHNICAL CONSULTATION'}
+                      {activeInvoice.packagesConfig?.inspection?.consultationTitle ?? 'SITE INSPECTION & TECHNICAL CONSULTATION'}
                     </span>
                     <span className="text-amber-400 font-extrabold text-xs">
                       {activeInvoice.currency} {(activeInvoice.packagesConfig?.inspection?.fee ?? SITE_INSPECTION_PACKAGE.fixedFee).toLocaleString()} FIXED
@@ -630,9 +632,13 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
                       <span className="font-bold text-slate-700 uppercase tracking-wide block border-b border-slate-100 pb-0.5">
                         Standards & Deliverables:
                       </span>
-                      <p>• Full permit-ready drawing set & specifications</p>
-                      <p>• Certified compliance with national building codes</p>
-                      <p>• Direct submission support for municipal councils</p>
+                      {(activeInvoice.standardsAndDeliverables ?? [
+                        'Full permit-ready drawing set & specifications',
+                        'Certified compliance with national building codes',
+                        'Direct submission support for municipal councils',
+                      ]).map((text, index) => (
+                        <p key={index} className="break-words">• {text}</p>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -732,13 +738,40 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
           {/* Card B: SELECTED PACKAGE RADIO & ADVANCE */}
           <div className="border border-slate-300 rounded-sm overflow-hidden bg-white flex-1">
             <div className="bg-[#0b2341] text-white px-2.5 py-0.5 text-center font-bold text-[11px] uppercase tracking-wider">
-              {isSinglePackage ? 'SELECTED TIER' : 'PACKAGE SCHEDULE'}
+              {isSinglePackage ? 'SELECTED PACKAGE' : 'PACKAGE SCHEDULE'}
             </div>
             <div className="p-2 space-y-1.5 text-xs">
-              <div className="text-[10.5px] font-bold text-slate-800 flex items-center justify-between">
-                <span>Scope:</span>
-                <span className="text-[#0b2341]">{selectedNames.length > 0 ? selectedNames.join(', ') : 'Custom Package'}</span>
-              </div>
+              {isSinglePackage && singlePackageKey === 'architectural' ? (
+                <div className="space-y-1 text-[10px]">
+                  {(['regular', 'premium'] as const).map((tier) => {
+                    const selected = activeInvoice.packageType === tier;
+                    const packageRate = PACKAGES[tier].rate;
+                    return (
+                      <div
+                        key={tier}
+                        className={`flex items-center gap-1.5 ${selected ? 'font-semibold text-[#c27803]' : 'text-slate-600'}`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+                            selected ? 'border-[#c27803]' : 'border-slate-300'
+                          }`}
+                        >
+                          {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#c27803]" />}
+                        </span>
+                        <span className="capitalize">
+                          {tier} ({activeInvoice.currency} {packageRate}/{activeInvoice.unit})
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-[10.5px] font-bold text-slate-800 flex items-center justify-between">
+                  <span>Scope:</span>
+                  <span className="text-[#0b2341]">{selectedNames.length > 0 ? selectedNames.join(', ') : 'Custom Package'}</span>
+                </div>
+              )}
 
               {/* Advance Deposit Schedule Indicator */}
               <div className="mt-1.5 pt-1.5 border-t border-slate-100 text-[9.5px] space-y-0.5">

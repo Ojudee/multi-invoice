@@ -30,10 +30,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleResetStorage = () => {
     try {
-      localStorage.clear();
-      sessionStorage.clear();
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith('univision_')) localStorage.removeItem(key);
+      }
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key?.startsWith('univision_')) sessionStorage.removeItem(key);
+      }
     } catch (e) {
-      console.error('Failed to clear storage:', e);
+      console.error('Failed to reset Univision app storage:', e);
     }
     window.location.reload();
   };
@@ -74,7 +80,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 type="button"
                 onClick={this.handleResetStorage}
                 className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-xs rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
-                title="Clears local cache and reloads default invoices"
+                title="Deletes Univision app data from this browser and reloads defaults"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
                 <span>Reset & Restore Defaults</span>

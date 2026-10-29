@@ -33,12 +33,51 @@ import { usePackageServices, PackageCategory } from '../services/packageServices
 import { ServicePackageEditorModal } from './ServicePackageEditorModal';
 import { Invoice } from '../types';
 import { UnivisionLogo } from './UnivisionLogo';
+import { usePortalStorage } from '../services/portalStorage';
+
+interface PackageEstimatorState {
+  floorArea: number;
+  includeArchitectural: boolean;
+  archTier: 'regular' | 'premium';
+  includeStructural: boolean;
+  structTier: 'regular' | 'premium';
+  includeBOQ: boolean;
+  boqTier: 'regular' | 'premium';
+  includeInspection: boolean;
+}
+
+const INITIAL_PACKAGE_ESTIMATOR: PackageEstimatorState = {
+  floorArea: 250,
+  includeArchitectural: true,
+  archTier: 'premium',
+  includeStructural: true,
+  structTier: 'premium',
+  includeBOQ: true,
+  boqTier: 'regular',
+  includeInspection: false,
+};
+
+function isPackageEstimatorState(value: unknown): value is PackageEstimatorState {
+  if (typeof value !== 'object' || value === null) return false;
+  const state = value as Record<string, unknown>;
+  return (
+    typeof state.floorArea === 'number' &&
+    typeof state.includeArchitectural === 'boolean' &&
+    (state.archTier === 'regular' || state.archTier === 'premium') &&
+    typeof state.includeStructural === 'boolean' &&
+    (state.structTier === 'regular' || state.structTier === 'premium') &&
+    typeof state.includeBOQ === 'boolean' &&
+    (state.boqTier === 'regular' || state.boqTier === 'premium') &&
+    typeof state.includeInspection === 'boolean'
+  );
+}
 
 interface PackagesPortalProps {
   isStandaloneWindow?: boolean;
   onPopoutWindow?: () => void;
   onGenerateInvoice?: (invoiceData: Partial<Invoice>) => void;
   onSwitchPortal?: (portal: 'invoices' | 'architectural' | 'structural' | 'boq' | 'packages' | 'inspection') => void;
+  onPackageServicesSaved: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
 }
 
 export function PackagesPortal({
@@ -46,25 +85,37 @@ export function PackagesPortal({
   onPopoutWindow,
   onGenerateInvoice,
   onSwitchPortal,
+  onPackageServicesSaved,
 }: PackagesPortalProps) {
-  // Bundle estimator state
-  const [floorArea, setFloorArea] = useState<number>(250);
-  const [includeArchitectural, setIncludeArchitectural] = useState<boolean>(true);
-  const [archTier, setArchTier] = useState<'regular' | 'premium'>('premium');
-
-  const [includeStructural, setIncludeStructural] = useState<boolean>(true);
-  const [structTier, setStructTier] = useState<'regular' | 'premium'>('premium');
-
-  const [includeBOQ, setIncludeBOQ] = useState<boolean>(true);
-  const [boqTier, setBoqTier] = useState<'regular' | 'premium'>('regular');
-
-  const [includeInspection, setIncludeInspection] = useState<boolean>(false);
+  const [estimator, setEstimator, saveStatus] = usePortalStorage(
+    'univision_general_package_estimator_v1',
+    INITIAL_PACKAGE_ESTIMATOR,
+    isPackageEstimatorState
+  );
+  const {
+    floorArea,
+    includeArchitectural,
+    archTier,
+    includeStructural,
+    structTier,
+    includeBOQ,
+    boqTier,
+    includeInspection,
+  } = estimator;
+  const setFloorArea = (value: number) => setEstimator((prev) => ({ ...prev, floorArea: value }));
+  const setIncludeArchitectural = (value: boolean) => setEstimator((prev) => ({ ...prev, includeArchitectural: value }));
+  const setArchTier = (value: PackageEstimatorState['archTier']) => setEstimator((prev) => ({ ...prev, archTier: value }));
+  const setIncludeStructural = (value: boolean) => setEstimator((prev) => ({ ...prev, includeStructural: value }));
+  const setStructTier = (value: PackageEstimatorState['structTier']) => setEstimator((prev) => ({ ...prev, structTier: value }));
+  const setIncludeBOQ = (value: boolean) => setEstimator((prev) => ({ ...prev, includeBOQ: value }));
+  const setBoqTier = (value: PackageEstimatorState['boqTier']) => setEstimator((prev) => ({ ...prev, boqTier: value }));
+  const setIncludeInspection = (value: boolean) => setEstimator((prev) => ({ ...prev, includeInspection: value }));
   const [notification, setNotification] = useState<string>('');
   const [servicesModalCategory, setServicesModalCategory] = useState<PackageCategory | null>(null);
 
-  const { regularServices: archReg, premiumExtraServices: archPremExtra } = usePackageServices('architectural');
-  const { regularServices: structReg, premiumExtraServices: structPremExtra } = usePackageServices('structural');
-  const { regularServices: boqReg, premiumExtraServices: boqPremExtra } = usePackageServices('boq');
+  const { regularServices: archReg, premiumExtraServices: archPremExtra } = usePackageServices('architectural', 'general');
+  const { regularServices: structReg, premiumExtraServices: structPremExtra } = usePackageServices('structural', 'general');
+  const { regularServices: boqReg, premiumExtraServices: boqPremExtra } = usePackageServices('boq', 'general');
 
   // Calculations
   const archFee = includeArchitectural
@@ -144,12 +195,8 @@ export function PackagesPortal({
       setNotification(`Created turnkey package invoice for GMD ${grandBundleTotal.toLocaleString()}!`);
       setTimeout(() => setNotification(''), 4000);
     } else {
-      try {
-        localStorage.setItem('univision_pending_invoice_sync', JSON.stringify(newInvoice));
-        window.dispatchEvent(new Event('storage'));
-        setNotification('Synced to Invoice Studio! Switch windows to view.');
-        setTimeout(() => setNotification(''), 4000);
-      } catch {}
+      setNotification('Invoice Studio is unavailable. Reopen this portal from the Invoice Studio to create an invoice.');
+      setTimeout(() => setNotification(''), 5000);
     }
   };
 
@@ -169,6 +216,12 @@ export function PackagesPortal({
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold border border-amber-400/30">
                   FLYER PRICING MATRIX
+                </span>
+                <span
+                  role="status"
+                  className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -746,6 +799,8 @@ export function PackagesPortal({
         isOpen={servicesModalCategory !== null}
         onClose={() => setServicesModalCategory(null)}
         initialCategory={servicesModalCategory || 'architectural'}
+        storageScope="general"
+        onSaved={onPackageServicesSaved}
       />
     </div>
   );

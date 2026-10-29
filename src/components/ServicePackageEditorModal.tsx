@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   PackageCategory,
+  PackageStorageScope,
   usePackageServices,
   ALL_PACKAGE_DEFAULTS,
 } from '../services/packageServicesStorage';
@@ -22,6 +23,8 @@ interface ServicePackageEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCategory?: PackageCategory;
+  storageScope: PackageStorageScope;
+  onSaved?: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
 }
 
 const CATEGORY_META: Record<
@@ -77,6 +80,8 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
   isOpen,
   onClose,
   initialCategory = 'boq',
+  storageScope,
+  onSaved,
 }) => {
   const [activeCategory, setActiveCategory] = useState<PackageCategory>(initialCategory);
   const [activeTab, setActiveTab] = useState<'regular' | 'premium'>('regular');
@@ -87,13 +92,14 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
     premiumExtraServices,
     updateAllServices,
     resetDefaults,
-  } = usePackageServices(activeCategory);
+  } = usePackageServices(activeCategory, storageScope);
 
   const [localRegular, setLocalRegular] = useState<string[]>(regularServices);
   const [localPremium, setLocalPremium] = useState<string[]>(premiumExtraServices);
   const [newRegularInput, setNewRegularInput] = useState('');
   const [newPremiumInput, setNewPremiumInput] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   // Sync state whenever modal opens or category changes
   useEffect(() => {
@@ -108,6 +114,7 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
     setLocalRegular(regularServices);
     setLocalPremium(premiumExtraServices);
     setSaveSuccess(false);
+    setSaveError(false);
   }, [activeCategory, regularServices, premiumExtraServices]);
 
   if (!isOpen) return null;
@@ -154,9 +161,14 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
   const handleReset = () => {
     if (window.confirm(`Reset ${currentMeta.title} to official default specifications?`)) {
       const defaults = ALL_PACKAGE_DEFAULTS[activeCategory];
+      if (!resetDefaults()) {
+        setSaveError(true);
+        setSaveSuccess(false);
+        return;
+      }
       setLocalRegular([...defaults.regular]);
       setLocalPremium([...defaults.premiumExtra]);
-      resetDefaults();
+      setSaveError(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     }
@@ -165,7 +177,13 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
   const handleSave = () => {
     const cleanedRegular = localRegular.map((s) => s.trim()).filter(Boolean);
     const cleanedPremium = localPremium.map((s) => s.trim()).filter(Boolean);
-    updateAllServices(cleanedRegular, cleanedPremium);
+    if (!updateAllServices(cleanedRegular, cleanedPremium)) {
+      setSaveError(true);
+      setSaveSuccess(false);
+      return;
+    }
+    onSaved?.(activeCategory, cleanedRegular, cleanedPremium);
+    setSaveError(false);
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);
@@ -412,7 +430,11 @@ export const ServicePackageEditorModal: React.FC<ServicePackageEditorModalProps>
         {/* MODAL FOOTER */}
         <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
           <div className="text-xs text-slate-400">
-            {saveSuccess ? (
+            {saveError ? (
+              <span role="alert" className="text-red-400 font-semibold">
+                Unable to save changes. Browser storage may be full or unavailable.
+              </span>
+            ) : saveSuccess ? (
               <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
                 <Check className="w-4 h-4" /> Changes saved and applied!
               </span>
