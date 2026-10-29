@@ -43,12 +43,30 @@ import { usePackageServices } from '../services/packageServicesStorage';
 import { ServicePackageEditorModal } from './ServicePackageEditorModal';
 import { printInvoiceElement } from '../utils/printHelper';
 import { DepartmentOfficialsCard } from './DepartmentOfficialsCard';
+import { usePortalStorage } from '../services/portalStorage';
+import { PackageCategory } from '../services/packageServicesStorage';
 
 interface StructuralEngineeringPortalProps {
   isStandaloneWindow?: boolean;
   onPopoutWindow?: () => void;
   onGenerateInvoice?: (invoiceData: Partial<Invoice>) => void;
   onSwitchPortal?: (portal: 'invoices' | 'architectural' | 'structural' | 'boq' | 'packages' | 'inspection') => void;
+  onPackageServicesSaved: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
+}
+
+function isStructuralProject(value: unknown): value is StructuralProject {
+  if (typeof value !== 'object' || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === 'string' &&
+    typeof project.projectNumber === 'string' &&
+    typeof project.title === 'string' &&
+    typeof project.clientName === 'string' &&
+    typeof project.totalFloorArea === 'number' &&
+    Array.isArray(project.members) &&
+    Array.isArray(project.bbsItems) &&
+    Array.isArray(project.deliverables)
+  );
 }
 
 export function StructuralEngineeringPortal({
@@ -56,20 +74,13 @@ export function StructuralEngineeringPortal({
   onPopoutWindow,
   onGenerateInvoice,
   onSwitchPortal,
+  onPackageServicesSaved,
 }: StructuralEngineeringPortalProps) {
-  // Load or init structural project
-  const [project, setProject] = useState<StructuralProject>(() => {
-    try {
-      const saved = localStorage.getItem('univision_active_structural_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.clientName !== 'Alhaji Musa Ceesay') {
-          return parsed;
-        }
-      }
-    } catch {}
-    return INITIAL_STRUCTURAL_PROJECT;
-  });
+  const [project, setProject, saveStatus] = usePortalStorage(
+    'univision_active_structural_v1',
+    INITIAL_STRUCTURAL_PROJECT,
+    isStructuralProject
+  );
 
   const [packageTier, setPackageTier] = useState<'regular' | 'premium'>('premium');
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'bbs' | 'parameters' | 'sheet'>('overview');
@@ -87,17 +98,6 @@ export function StructuralEngineeringPortal({
       }
     }
   }, [packageTier]);
-
-  // Persist project
-  useEffect(() => {
-    try {
-      localStorage.setItem('univision_active_structural_v1', JSON.stringify(project));
-      // Dispatch cross-window storage event
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.warn('Storage sync issue', e);
-    }
-  }, [project]);
 
   const calculations = calculateStructuralProject(project);
 
@@ -237,13 +237,8 @@ export function StructuralEngineeringPortal({
       setNotification(`Created Structural Invoice (${pkg.name} @ GMD ${rate}/m²)!`);
       setTimeout(() => setNotification(''), 4000);
     } else {
-      // Put in localStorage for cross-window uptake
-      try {
-        localStorage.setItem('univision_pending_invoice_sync', JSON.stringify(newInvoiceData));
-        window.dispatchEvent(new Event('storage'));
-        setNotification('Invoice synced! Switch to Invoice Studio to view.');
-        setTimeout(() => setNotification(''), 4000);
-      } catch {}
+      setNotification('Invoice Studio is unavailable. Reopen this portal from the Invoice Studio to create an invoice.');
+      setTimeout(() => setNotification(''), 5000);
     }
   };
 
@@ -274,6 +269,12 @@ export function StructuralEngineeringPortal({
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold border border-blue-400/30">
                   PACKAGE 02
+                </span>
+                <span
+                  role="status"
+                  className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -1417,6 +1418,8 @@ export function StructuralEngineeringPortal({
         isOpen={isServicesModalOpen}
         onClose={() => setIsServicesModalOpen(false)}
         initialCategory="structural"
+        storageScope="structural"
+        onSaved={onPackageServicesSaved}
       />
     </div>
   );

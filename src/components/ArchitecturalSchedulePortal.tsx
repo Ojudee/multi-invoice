@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Compass,
   FileText,
@@ -23,6 +23,8 @@ import { ServicePackageEditorModal } from './ServicePackageEditorModal';
 import { printInvoiceElement } from '../utils/printHelper';
 import { Invoice } from '../types';
 import { DepartmentOfficialsCard } from './DepartmentOfficialsCard';
+import { usePortalStorage } from '../services/portalStorage';
+import { PackageCategory } from '../services/packageServicesStorage';
 
 export interface ArchitecturalSheet {
   id: string;
@@ -92,11 +94,26 @@ export const INITIAL_ARCHITECTURAL_PROJECT: ArchitecturalProject = {
   ],
 };
 
+function isArchitecturalProject(value: unknown): value is ArchitecturalProject {
+  if (typeof value !== 'object' || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === 'string' &&
+    typeof project.projectNumber === 'string' &&
+    typeof project.title === 'string' &&
+    typeof project.clientName === 'string' &&
+    typeof project.grossFloorArea === 'number' &&
+    Array.isArray(project.sheets) &&
+    Array.isArray(project.doorWindowSchedule)
+  );
+}
+
 interface ArchitecturalSchedulePortalProps {
   isStandaloneWindow?: boolean;
   onPopoutWindow?: () => void;
   onGenerateInvoice?: (invoiceData: Partial<Invoice>) => void;
   onSwitchPortal?: (portal: 'invoices' | 'architectural' | 'structural' | 'boq' | 'packages' | 'inspection') => void;
+  onPackageServicesSaved: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
 }
 
 export function ArchitecturalSchedulePortal({
@@ -104,20 +121,13 @@ export function ArchitecturalSchedulePortal({
   onPopoutWindow,
   onGenerateInvoice,
   onSwitchPortal,
+  onPackageServicesSaved,
 }: ArchitecturalSchedulePortalProps) {
-  // Load or initialize project from storage
-  const [project, setProject] = useState<ArchitecturalProject>(() => {
-    try {
-      const saved = localStorage.getItem('univision_active_arch_project_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.clientName !== 'Amadou Jallow') {
-          return parsed;
-        }
-      }
-    } catch {}
-    return INITIAL_ARCHITECTURAL_PROJECT;
-  });
+  const [project, setProject, saveStatus] = usePortalStorage(
+    'univision_active_arch_project_v1',
+    INITIAL_ARCHITECTURAL_PROJECT,
+    isArchitecturalProject
+  );
 
   const [packageTier, setPackageTier] = useState<'regular' | 'premium'>('premium');
   const [activeTab, setActiveTab] = useState<'sheets' | 'calculator' | 'schedule' | 'preview'>('sheets');
@@ -126,16 +136,6 @@ export function ArchitecturalSchedulePortal({
 
   // Hook for editable architectural package services
   const { regularServices, premiumExtraServices, premiumAllServices } = usePackageServices('architectural');
-
-  // Persist project
-  useEffect(() => {
-    try {
-      localStorage.setItem('univision_active_arch_project_v1', JSON.stringify(project));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.warn('Storage sync issue', e);
-    }
-  }, [project]);
 
   // Calculations
   const rate = ARCHITECTURAL_PACKAGES[packageTier].rate;
@@ -249,12 +249,8 @@ export function ArchitecturalSchedulePortal({
       setNotification(`Created Architectural Invoice for GMD ${calculatedFee.toLocaleString()}!`);
       setTimeout(() => setNotification(''), 4000);
     } else {
-      try {
-        localStorage.setItem('univision_pending_invoice_sync', JSON.stringify(newInvoice));
-        window.dispatchEvent(new Event('storage'));
-        setNotification('Synced to Invoice Studio! Switch to Invoice Studio to view.');
-        setTimeout(() => setNotification(''), 4000);
-      } catch {}
+      setNotification('Invoice Studio is unavailable. Reopen this portal from the Invoice Studio to create an invoice.');
+      setTimeout(() => setNotification(''), 5000);
     }
   };
 
@@ -285,6 +281,12 @@ export function ArchitecturalSchedulePortal({
                 </h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300 border border-blue-500/40">
                   PACKAGE 01
+                </span>
+                <span
+                  role="status"
+                  className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -1082,6 +1084,8 @@ export function ArchitecturalSchedulePortal({
         isOpen={isServicesModalOpen}
         onClose={() => setIsServicesModalOpen(false)}
         initialCategory="architectural"
+        storageScope="architectural"
+        onSaved={onPackageServicesSaved}
       />
     </div>
   );

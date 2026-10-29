@@ -149,6 +149,38 @@ export function isArchitecturalFloor(f: FloorItem): boolean {
   return !isInspectionFloor(f) && !isBOQFloor(f) && !isStructuralFloor(f);
 }
 
+export function applyPackageServicesToInvoice(
+  invoice: Invoice,
+  category: 'architectural' | 'structural' | 'boq',
+  regularServices: string[],
+  premiumExtraServices: string[]
+): Invoice {
+  const config = getInvoicePackagesConfig(invoice);
+  const selectedConfig = config[category];
+  const deliverables = selectedConfig.tier === 'regular'
+    ? [...regularServices]
+    : [...regularServices, ...premiumExtraServices];
+  const isDedicatedInvoice = getInvoiceDiscipline(invoice) === category;
+  const floorMatches: Record<typeof category, (floor: FloorItem) => boolean> = {
+    architectural: isArchitecturalFloor,
+    structural: isStructuralFloor,
+    boq: isBOQFloor,
+  };
+
+  return {
+    ...invoice,
+    packagesConfig: {
+      ...config,
+      [category]: { ...selectedConfig, deliverables },
+    },
+    floors: invoice.floors.map((floor) =>
+      isDedicatedInvoice || floorMatches[category](floor)
+        ? { ...floor, deliverables: [...deliverables] }
+        : floor
+    ),
+  };
+}
+
 export function getInvoiceDiscipline(
   invoice?: Invoice | null
 ): 'architectural' | 'structural' | 'boq' | 'inspection' | 'multi_package' {
@@ -603,7 +635,19 @@ export function filterInvoiceForPackages(
   if (isInvoiceSingle && singlePackageKey) {
     if (invoice.floors && invoice.floors.length > 0) {
       invoice.floors.forEach((f) => {
-        newFloors.push({ ...f });
+        if (singlePackageKey === 'inspection') {
+          newFloors.push({
+            ...f,
+            floorName: config.inspection.consultationTitle ?? f.floorName,
+            areaLabel: config.inspection.inspectionScope === undefined
+              ? f.areaLabel
+              : config.inspection.inspectionScope
+              ? `${config.inspection.inspectionScope} (Fixed Scope)`
+              : '',
+          });
+        } else {
+          newFloors.push({ ...f });
+        }
       });
     } else {
       // Fallback synthesis if floors empty
@@ -625,12 +669,14 @@ export function filterInvoiceForPackages(
         const inspectFee = config.inspection.fee || SITE_INSPECTION_PACKAGE.fixedFee;
         newFloors.push({
           id: 'inspect-default-item',
-          floorName: config.inspection.consultationTitle || 'Site Inspection & Technical Consultation',
+          floorName: config.inspection.consultationTitle ?? 'Site Inspection & Technical Consultation',
           quantity: 1,
           unitLabel: 'Visit',
           area: 1,
           customRate: inspectFee,
-          areaLabel: '1 Visit (Fixed Scope)',
+          areaLabel: config.inspection.inspectionScope
+            ? `${config.inspection.inspectionScope} (Fixed Scope)`
+            : '',
           rateLabel: `${inspectFee.toLocaleString()} / Visit`,
           amountOverride: inspectFee,
           deliverables: config.inspection.deliverables,
@@ -671,7 +717,7 @@ export function filterInvoiceForPackages(
           newFloors.push({
             id: f.id,
             sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : f.sectionTitle,
-            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[Architectural]') ? `[Architectural] ${f.floorName}` : f.floorName,
+            floorName: f.floorName.replace(/^\[Architectural\]\s*/i, ''),
             area: Number(f.area) || 0,
             quantity: f.quantity,
             unitLabel: f.unitLabel,
@@ -686,7 +732,7 @@ export function filterInvoiceForPackages(
         newFloors.push({
           id: 'arch-default-floor',
           sectionTitle: selectedKeys.length > 1 ? 'ARCHITECTURAL DRAWING PACKAGE SCHEDULE' : undefined,
-          floorName: selectedKeys.length > 1 ? '[Architectural] Covered Floor Area' : 'Architectural Floor Design Scope',
+          floorName: selectedKeys.length > 1 ? 'Covered Floor Area' : 'Architectural Floor Design Scope',
           area: totalArea,
           customRate: config.architectural.rate,
           areaLabel: `${totalArea.toFixed(1)} ${invoice.unit}`,
@@ -788,16 +834,18 @@ export function filterInvoiceForPackages(
       const existingInspectFloors = (invoice.floors || []).filter(isInspectionFloor);
       if (existingInspectFloors.length > 0) {
         existingInspectFloors.forEach((f, idx) => {
+          const scope = config.inspection.inspectionScope;
           newFloors.push({
             ...f,
             sectionTitle: selectedKeys.length > 1 && idx === 0 ? 'SITE INSPECTION & REPORTS SCHEDULE' : f.sectionTitle,
-            floorName: selectedKeys.length > 1 && !f.floorName.startsWith('[Inspection]') ? `[Inspection] ${f.floorName}` : f.floorName,
+            floorName: f.floorName,
+            areaLabel: scope === undefined ? f.areaLabel : scope ? `${scope} (Fixed Scope)` : '',
           });
         });
       } else {
         const fee = config.inspection.fee || SITE_INSPECTION_PACKAGE.fixedFee;
-        const title = config.inspection.consultationTitle || 'Site Inspection & Technical Consultation';
-        const scope = config.inspection.inspectionScope || 'On-Site Field Visit & Terrain Assessment';
+        const title = config.inspection.consultationTitle ?? 'Site Inspection & Technical Consultation';
+        const scope = config.inspection.inspectionScope ?? 'On-Site Field Visit & Terrain Assessment';
         const services = config.inspection.servicesList || SITE_INSPECTION_PACKAGE.includes;
         const officialDeliverables = config.inspection.officialDeliverables || SITE_INSPECTION_PACKAGE.officialDeliverables;
 
@@ -808,7 +856,7 @@ export function filterInvoiceForPackages(
           quantity: 1,
           unitLabel: 'Visit',
           area: 1,
-          areaLabel: `${scope} (Fixed Scope)`,
+          areaLabel: scope ? `${scope} (Fixed Scope)` : '',
           customRate: fee,
           rateLabel: `${formatCurrency(fee, invoice.currency)} Fixed Rate`,
           amountOverride: fee,

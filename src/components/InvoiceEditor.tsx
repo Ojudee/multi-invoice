@@ -51,8 +51,12 @@ import {
   getInvoicePackagesConfig,
   getPackageSummaries,
   PACKAGE_PRESETS,
+  isArchitecturalFloor,
+  isStructuralFloor,
+  isBOQFloor,
+  isInspectionFloor,
 } from '../utils/packageManager';
-import { usePackageServices, PackageCategory } from '../services/packageServicesStorage';
+import { usePackageServices, PackageCategory, PackageStorageScope } from '../services/packageServicesStorage';
 import { ServicePackageEditorModal } from './ServicePackageEditorModal';
 import { calculateInvoice, formatCurrency } from '../utils/calculations';
 
@@ -60,6 +64,8 @@ export type StudioTab = 'architectural' | 'structural' | 'boq' | 'inspection' | 
 
 interface InvoiceEditorProps {
   invoice: Invoice;
+  storageScope: PackageStorageScope;
+  onPackageServicesSaved: (category: PackageCategory, regular: string[], premiumExtra: string[]) => void;
   onChange: (updatedInvoice: Invoice) => void;
   onOpenSignatureModal: () => void;
   onSave?: () => void;
@@ -78,6 +84,8 @@ interface InvoiceEditorProps {
 
 export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   invoice,
+  storageScope,
+  onPackageServicesSaved,
   onChange,
   onOpenSignatureModal,
   onSave,
@@ -96,8 +104,8 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
   const [activeTab, setActiveTab] = useState<'project' | 'floors' | 'packages' | 'financials' | 'payment' | 'terms'>('floors');
   const [servicesModalCategory, setServicesModalCategory] = useState<PackageCategory | null>(null);
 
-  const { regularServices, premiumExtraServices } = usePackageServices('boq');
-  const { regularServices: archReg, premiumAllServices: archPremAll } = usePackageServices('architectural');
+  const { regularServices, premiumExtraServices } = usePackageServices('boq', storageScope);
+  const { regularServices: archReg, premiumAllServices: archPremAll } = usePackageServices('architectural', storageScope);
   const calculations = calculateInvoice(invoice);
 
   // Separate Packages Configuration & Summaries
@@ -121,6 +129,146 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
       packageType: updated.architectural.tier,
       packageRate: updated.architectural.rate,
     });
+  };
+
+  const updateInspectionTier = (tier: string, fee: number) => {
+    const updatedConfig: InvoicePackagesConfig = {
+      ...pkgConfig,
+      inspection: { ...pkgConfig.inspection, enabled: true, tier, fee },
+    };
+    const isInspectionLine = (floor: FloorItem) =>
+      isInspectionFloor(floor) || invoice.invoiceCategory === 'inspection';
+    const hasInspectionFloor = invoice.floors.some(isInspectionLine);
+    const updatedFloors = invoice.floors.map((floor) => {
+      if (!isInspectionLine(floor)) return floor;
+      const quantity = typeof floor.quantity === 'number' ? floor.quantity : 1;
+      return {
+        ...floor,
+        customRate: fee,
+        rateLabel: `${fee.toLocaleString()} / Visit`,
+        amountOverride: quantity * fee,
+      };
+    });
+
+    if (!hasInspectionFloor) {
+      updatedFloors.push({
+        id: `inspect-${Date.now()}`,
+        floorName: updatedConfig.inspection.consultationTitle ?? 'Site Inspection & Technical Consultation',
+        quantity: 1,
+        unitLabel: 'Visit',
+        area: 1,
+        customRate: fee,
+        areaLabel: updatedConfig.inspection.inspectionScope
+          ? `${updatedConfig.inspection.inspectionScope} (Fixed Scope)`
+          : '',
+        rateLabel: `${fee.toLocaleString()} / Visit`,
+        amountOverride: fee,
+        deliverables: [
+          ...(updatedConfig.inspection.servicesList || SITE_INSPECTION_PACKAGE.includes),
+          ...(updatedConfig.inspection.officialDeliverables || SITE_INSPECTION_PACKAGE.officialDeliverables),
+        ],
+      });
+    }
+
+    onChange({
+      ...invoice,
+      packagesConfig: updatedConfig,
+      floors: updatedFloors,
+    });
+  };
+
+  const updateArchitecturalTier = (type: PackageType, customRate?: number) => {
+    const rate = customRate ?? (type === 'regular' ? 75 : type === 'premium' ? 100 : invoice.packageRate);
+    const updatedConfig: InvoicePackagesConfig = {
+      ...pkgConfig,
+      architectural: { ...pkgConfig.architectural, enabled: true, tier: type, rate },
+    };
+    onChange({
+      ...invoice,
+      packageType: type,
+      packageRate: rate,
+      packagesConfig: updatedConfig,
+      floors: invoice.floors.map((floor) => {
+        if (!isArchitecturalFloor(floor) && invoice.invoiceCategory !== 'architectural') return floor;
+        const quantity = typeof floor.quantity === 'number' ? floor.quantity : Number(floor.area) || 0;
+        return {
+          ...floor,
+          customRate: rate,
+          rateLabel: `${rate} / ${invoice.unit}`,
+          amountOverride: quantity * rate,
+          deliverables: [...(updatedConfig.architectural.deliverables || [])],
+        };
+      }),
+    });
+  };
+
+  const updateStructuralTier = (tier: PackageType, rate: number) => {
+    const updatedConfig: InvoicePackagesConfig = {
+      ...pkgConfig,
+      structural: { ...pkgConfig.structural, enabled: true, tier, rate },
+    };
+    onChange({
+      ...invoice,
+      packagesConfig: updatedConfig,
+      floors: invoice.floors.map((floor) => {
+        if (!isStructuralFloor(floor) && invoice.invoiceCategory !== 'structural') return floor;
+        const quantity = typeof floor.quantity === 'number' ? floor.quantity : Number(floor.area) || 0;
+        return {
+          ...floor,
+          customRate: rate,
+          rateLabel: `${rate} / ${invoice.unit}`,
+          amountOverride: quantity * rate,
+          deliverables: [...(updatedConfig.structural.deliverables || [])],
+        };
+      }),
+    });
+  };
+
+  const updateBOQPricing = (tier: PackageType, fee: number, areaRange = pkgConfig.boq.areaRange) => {
+    const updatedConfig: InvoicePackagesConfig = {
+      ...pkgConfig,
+      boq: { ...pkgConfig.boq, enabled: true, tier, fee, areaRange },
+    };
+    const isBOQLine = (floor: FloorItem) => isBOQFloor(floor) || invoice.invoiceCategory === 'boq';
+    const hasBOQFloor = invoice.floors.some(isBOQLine);
+    const updatedFloors = invoice.floors.map((floor) => {
+      if (!isBOQLine(floor)) return floor;
+      const quantity = typeof floor.quantity === 'number' ? floor.quantity : 1;
+      return {
+        ...floor,
+        floorName: `Full Bill of Quantities (BOQ) - ${areaRange || 'Fixed Range'}`,
+        customRate: fee,
+        rateLabel: `${fee.toLocaleString()} Fixed`,
+        areaLabel: `${quantity} Set${areaRange ? ` (${areaRange})` : ''}`,
+        amountOverride: quantity * fee,
+      };
+    });
+
+    if (!hasBOQFloor) {
+      updatedFloors.push({
+        id: `boq-${Date.now()}`,
+        floorName: `Full Bill of Quantities (BOQ) - ${areaRange || 'Fixed Range'}`,
+        quantity: 1,
+        unitLabel: 'Set',
+        area: 1,
+        customRate: fee,
+        areaLabel: `1 Set${areaRange ? ` (${areaRange})` : ''}`,
+        rateLabel: `${fee.toLocaleString()} Fixed`,
+        amountOverride: fee,
+        deliverables: [...(updatedConfig.boq.deliverables || BOQ_PACKAGES.regular.features)],
+      });
+    }
+
+    onChange({
+      ...invoice,
+      packagesConfig: updatedConfig,
+      floors: updatedFloors,
+    });
+  };
+
+  const updateBOQTier = (tier: PackageType) => {
+    const fee = getBOQPackageFee(pkgSummaries.totalArea, tier === 'premium' ? 'premium' : 'regular');
+    updateBOQPricing(tier, fee);
   };
 
   const handleTogglePackageInCombine = (key: keyof PackageSelectionMap) => {
@@ -394,12 +542,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
 
   // Package Switcher
   const selectPackage = (type: PackageType) => {
-    const rate = type === 'regular' ? 75 : type === 'premium' ? 100 : invoice.packageRate;
-    onChange({
-      ...invoice,
-      packageType: type,
-      packageRate: rate,
-    });
+    updateArchitecturalTier(type);
   };
 
   // Addon Toggler
@@ -448,8 +591,15 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
         {/* Action Controls */}
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Save Status Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 text-[11px] text-slate-300 border border-slate-700">
-            <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+          <div
+            role="status"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 text-[11px] border border-slate-700 ${
+              saveStatusMessage.toLowerCase().includes('failed') ? 'text-red-300' : 'text-slate-300'
+            }`}
+          >
+            <Check className={`w-3 h-3 shrink-0 ${
+              saveStatusMessage.toLowerCase().includes('failed') ? 'text-red-400' : 'text-emerald-400'
+            }`} />
             <span>{saveStatusMessage}</span>
           </div>
 
@@ -1053,12 +1203,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 {/* Structural Tiers */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div
-                    onClick={() =>
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        structural: { ...c.structural, enabled: true, tier: 'regular', rate: 65 },
-                      }))
-                    }
+                    onClick={() => updateStructuralTier('regular', 65)}
                     className={`p-3 rounded-lg border cursor-pointer transition ${
                       pkgConfig.structural.tier === 'regular'
                         ? 'border-indigo-500 bg-indigo-950/30 ring-1 ring-indigo-500/50'
@@ -1077,12 +1222,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                   </div>
 
                   <div
-                    onClick={() =>
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        structural: { ...c.structural, enabled: true, tier: 'premium', rate: 85 },
-                      }))
-                    }
+                    onClick={() => updateStructuralTier('premium', 85)}
                     className={`p-3 rounded-lg border cursor-pointer transition ${
                       pkgConfig.structural.tier === 'premium'
                         ? 'border-emerald-500 bg-emerald-950/20 ring-1 ring-emerald-500/50'
@@ -1128,10 +1268,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                       value={pkgConfig.structural.rate}
                       onChange={(e) => {
                         const r = parseFloat(e.target.value) || 0;
-                        updatePkgConfig((c) => ({
-                          ...c,
-                          structural: { ...c.structural, tier: 'custom', rate: r },
-                        }));
+                        updateStructuralTier('custom', r);
                       }}
                       className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-900 border border-slate-700 rounded text-amber-300 focus:outline-hidden"
                     />
@@ -1351,13 +1488,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 {/* BOQ Tiers (Regular vs Premium) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div
-                    onClick={() => {
-                      const fee = getBOQPackageFee(pkgSummaries.totalArea, 'regular');
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        boq: { ...c.boq, enabled: true, tier: 'regular', fee },
-                      }));
-                    }}
+                    onClick={() => updateBOQTier('regular')}
                     className={`p-3 rounded-lg border cursor-pointer transition ${
                       pkgConfig.boq.tier === 'regular'
                         ? 'border-blue-500 bg-blue-950/30 ring-1 ring-blue-500/50'
@@ -1376,13 +1507,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                   </div>
 
                   <div
-                    onClick={() => {
-                      const fee = getBOQPackageFee(pkgSummaries.totalArea, 'premium');
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        boq: { ...c.boq, enabled: true, tier: 'premium', fee },
-                      }));
-                    }}
+                    onClick={() => updateBOQTier('premium')}
                     className={`p-3 rounded-lg border cursor-pointer transition ${
                       pkgConfig.boq.tier === 'premium'
                         ? 'border-emerald-500 bg-emerald-950/20 ring-1 ring-emerald-500/50'
@@ -1431,37 +1556,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                           key={tier.range}
                           type="button"
                           onClick={() => {
-                            const newFee = targetFee;
-                            updatePkgConfig((c) => ({
-                              ...c,
-                              boq: {
-                                ...c.boq,
-                                enabled: true,
-                                areaRange: tier.range,
-                                fee: newFee,
-                              },
-                            }));
-                            if (invoice.floors.length === 0) {
-                              addBOQItem(`Full Bill of Quantities (BOQ) - ${tier.range}`, newFee, 1, tier.range);
-                            } else {
-                              onChange({
-                                ...invoice,
-                                floors: invoice.floors.map((floor) => {
-                                  if (floor.unitLabel === 'Set' || floor.floorName.toLowerCase().includes('boq') || invoice.invoiceCategory === 'boq') {
-                                    const q = typeof floor.quantity === 'number' ? floor.quantity : 1;
-                                    return {
-                                      ...floor,
-                                      floorName: `Full Bill of Quantities (BOQ) - ${tier.range}`,
-                                      customRate: newFee,
-                                      rateLabel: `${newFee.toLocaleString()} Fixed`,
-                                      areaLabel: `${q} Set (${tier.range})`,
-                                      amountOverride: q * newFee,
-                                    };
-                                  }
-                                  return floor;
-                                }),
-                              });
-                            }
+                            updateBOQPricing(pkgConfig.boq.tier, targetFee, tier.range);
                           }}
                           className={`p-2 rounded border text-left transition cursor-pointer ${
                             isSelected
@@ -1489,25 +1584,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                         value={pkgConfig.boq.fee}
                         onChange={(e) => {
                           const f = parseFloat(e.target.value) || 0;
-                          updatePkgConfig((c) => ({
-                            ...c,
-                            boq: { ...c.boq, fee: f },
-                          }));
-                          onChange({
-                            ...invoice,
-                            floors: invoice.floors.map((floor) => {
-                              if (floor.unitLabel === 'Set' || floor.floorName.toLowerCase().includes('boq') || invoice.invoiceCategory === 'boq') {
-                                const q = typeof floor.quantity === 'number' ? floor.quantity : 1;
-                                return {
-                                  ...floor,
-                                  customRate: f,
-                                  rateLabel: `${f.toLocaleString()} Fixed`,
-                                  amountOverride: q * f,
-                                };
-                              }
-                              return floor;
-                            }),
-                          });
+                          updateBOQPricing(pkgConfig.boq.tier, f);
                         }}
                         className="w-28 px-2 py-1 text-xs font-mono text-right bg-slate-900 border border-slate-700 rounded text-amber-300 focus:outline-hidden"
                       />
@@ -1756,7 +1833,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                     </label>
                     <input
                       type="text"
-                      value={pkgConfig.inspection.consultationTitle || 'SITE INSPECTION & TECHNICAL CONSULTATION'}
+                      value={pkgConfig.inspection.consultationTitle ?? 'SITE INSPECTION & TECHNICAL CONSULTATION'}
                       onChange={(e) =>
                         updatePkgConfig((c) => ({
                           ...c,
@@ -1771,16 +1848,16 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                     <label className="block text-slate-300 font-bold mb-1">
                       Area / Scope Description:
                     </label>
-                    <input
-                      type="text"
-                      value={pkgConfig.inspection.inspectionScope || 'On-Site Field Visit & Terrain Assessment'}
+                    <textarea
+                      rows={2}
+                      value={pkgConfig.inspection.inspectionScope ?? 'On-Site Field Visit & Terrain Assessment'}
                       onChange={(e) =>
                         updatePkgConfig((c) => ({
                           ...c,
                           inspection: { ...c.inspection, inspectionScope: e.target.value },
                         }))
                       }
-                      className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-amber-300 focus:outline-hidden focus:border-amber-500"
+                      className="w-full min-h-10 px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-amber-300 focus:outline-hidden focus:border-amber-500"
                     />
                   </div>
                 </div>
@@ -1788,33 +1865,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 {/* Inspection Fee Rate Selector */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div
-                    onClick={() => {
-                      const newRate = 15000;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        inspection: { ...c.inspection, enabled: true, fee: newRate },
-                      }));
-                      if (invoice.floors.length === 0) {
-                        addInspectionItem('On-Site Technical Field Inspection & Compliance Audit', newRate, 1);
-                      } else {
-                        onChange({
-                          ...invoice,
-                          floors: invoice.floors.map((floor) => {
-                            if (floor.unitLabel === 'Visit' || floor.floorName.toLowerCase().includes('ins') || invoice.invoiceCategory === 'inspection') {
-                              const v = typeof floor.quantity === 'number' ? floor.quantity : 1;
-                              return {
-                                ...floor,
-                                customRate: newRate,
-                                rateLabel: `${newRate.toLocaleString()} / Visit`,
-                                areaLabel: `${v} ${v === 1 ? 'Visit' : 'Visits'}`,
-                                amountOverride: v * newRate,
-                              };
-                            }
-                            return floor;
-                          }),
-                        });
-                      }
-                    }}
+                    onClick={() => updateInspectionTier('field_visit', 15000)}
                     className={`p-2.5 rounded-lg border cursor-pointer transition ${
                       pkgConfig.inspection.fee === 15000
                         ? 'border-amber-500 bg-amber-950/40 ring-1 ring-amber-500/50'
@@ -1833,28 +1884,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                   </div>
 
                   <div
-                    onClick={() => {
-                      const newRate = 3500;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        inspection: { ...c.inspection, enabled: true, fee: newRate },
-                      }));
-                      onChange({
-                        ...invoice,
-                        floors: invoice.floors.map((floor) => {
-                          if (floor.unitLabel === 'Visit' || floor.floorName.toLowerCase().includes('ins') || invoice.invoiceCategory === 'inspection') {
-                            const v = typeof floor.quantity === 'number' ? floor.quantity : 1;
-                            return {
-                              ...floor,
-                              customRate: newRate,
-                              rateLabel: `${newRate.toLocaleString()} / Visit`,
-                              amountOverride: v * newRate,
-                            };
-                          }
-                          return floor;
-                        }),
-                      });
-                    }}
+                    onClick={() => updateInspectionTier('standard_visit', 3500)}
                     className={`p-2.5 rounded-lg border cursor-pointer transition ${
                       pkgConfig.inspection.fee === 3500
                         ? 'border-blue-500 bg-blue-950/30 ring-1 ring-blue-500/50'
@@ -1873,28 +1903,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                   </div>
 
                   <div
-                    onClick={() => {
-                      const newRate = 6500;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        inspection: { ...c.inspection, enabled: true, fee: newRate },
-                      }));
-                      onChange({
-                        ...invoice,
-                        floors: invoice.floors.map((floor) => {
-                          if (floor.unitLabel === 'Visit' || floor.floorName.toLowerCase().includes('ins') || invoice.invoiceCategory === 'inspection') {
-                            const v = typeof floor.quantity === 'number' ? floor.quantity : 1;
-                            return {
-                              ...floor,
-                              customRate: newRate,
-                              rateLabel: `${newRate.toLocaleString()} / Visit`,
-                              amountOverride: v * newRate,
-                            };
-                          }
-                          return floor;
-                        }),
-                      });
-                    }}
+                    onClick={() => updateInspectionTier('advisory_visit', 6500)}
                     className={`p-2.5 rounded-lg border cursor-pointer transition ${
                       pkgConfig.inspection.fee === 6500
                         ? 'border-emerald-500 bg-emerald-950/20 ring-1 ring-emerald-500/50'
@@ -1996,12 +2005,23 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                                 value={rate}
                                 onChange={(e) => {
                                   const val = parseFloat(e.target.value) || 0;
-                                  updateFloor(floor.id, {
-                                    customRate: val,
-                                    rateLabel: `${val.toLocaleString()} / Visit`,
-                                    amountOverride: visits * val,
+                                  onChange({
+                                    ...invoice,
+                                    packagesConfig: {
+                                      ...pkgConfig,
+                                      inspection: { ...pkgConfig.inspection, fee: val },
+                                    },
+                                    floors: invoice.floors.map((item) =>
+                                      item.id === floor.id
+                                        ? {
+                                            ...item,
+                                            customRate: val,
+                                            rateLabel: `${val.toLocaleString()} / Visit`,
+                                            amountOverride: visits * val,
+                                          }
+                                        : item,
+                                    ),
                                   });
-                                  updatePkgConfig((c) => ({ ...c, inspection: { ...c.inspection, fee: val } }));
                                 }}
                                 className="w-full text-right px-2.5 py-1.5 text-xs font-mono tabular-nums bg-slate-950 border border-slate-700 rounded text-amber-300 focus:outline-hidden focus:border-amber-500"
                               />
@@ -2223,6 +2243,73 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 Manage each package independently. Configure tiers, print only ONE package at a time, or combine any two or more into a consolidated invoice.
               </p>
             </div>
+
+            {(pkgSummaries.activeCount > 1 || invoice.invoiceCategory === 'multi_package') && (
+              <section className="p-3.5 bg-slate-950/80 border border-slate-700 rounded-lg space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wide">
+                      Standards & Deliverables (Editable)
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      These entries appear in the consolidated invoice and update as you type.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({
+                        ...invoice,
+                        standardsAndDeliverables: [
+                          ...(invoice.standardsAndDeliverables ?? [
+                            'Full permit-ready drawing set & specifications',
+                            'Certified compliance with national building codes',
+                            'Direct submission support for municipal councils',
+                          ]),
+                          '',
+                        ],
+                      })
+                    }
+                    className="px-2.5 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+                {(invoice.standardsAndDeliverables ?? [
+                  'Full permit-ready drawing set & specifications',
+                  'Certified compliance with national building codes',
+                  'Direct submission support for municipal councils',
+                ]).map((text, index, entries) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={text}
+                      onChange={(event) => {
+                        const updated = [...entries];
+                        updated[index] = event.target.value;
+                        onChange({ ...invoice, standardsAndDeliverables: updated });
+                      }}
+                      placeholder="Enter a standard or deliverable"
+                      className="flex-1 px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded text-slate-200 focus:outline-hidden focus:border-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onChange({
+                          ...invoice,
+                          standardsAndDeliverables: entries.filter((_, entryIndex) => entryIndex !== index),
+                        })
+                      }
+                      className="p-1 text-slate-500 hover:text-rose-400 rounded cursor-pointer"
+                      title="Remove standard or deliverable"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {/* 1. MASTER PRINT HUB (DIRECT SINGLE-PACKAGE & COMBINED PRINTING) */}
             <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-[#0b2341] border border-blue-500/40 rounded-xl p-4 shadow-xl space-y-3.5">
@@ -2615,10 +2702,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                     value={pkgConfig.architectural.rate}
                     onChange={(e) => {
                       const r = parseFloat(e.target.value) || 0;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        architectural: { ...c.architectural, tier: 'custom', rate: r },
-                      }));
+                      updateArchitecturalTier('custom', r);
                     }}
                     className="w-20 px-2 py-1 text-xs font-mono text-right bg-slate-800 border border-slate-700 rounded text-amber-300 focus:outline-hidden"
                   />
@@ -2763,10 +2847,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                     value={pkgConfig.structural.rate}
                     onChange={(e) => {
                       const r = parseFloat(e.target.value) || 0;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        structural: { ...c.structural, tier: 'custom', rate: r },
-                      }));
+                      updateStructuralTier('custom', r);
                     }}
                     className="w-20 px-2 py-1 text-xs font-mono text-right bg-slate-800 border border-slate-700 rounded text-amber-300 focus:outline-hidden"
                   />
@@ -2835,13 +2916,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
               {/* BOQ Tiers */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div
-                  onClick={() => {
-                    const fee = getBOQPackageFee(pkgSummaries.totalArea, 'regular');
-                    updatePkgConfig((c) => ({
-                      ...c,
-                      boq: { ...c.boq, enabled: true, tier: 'regular', fee },
-                    }));
-                  }}
+                  onClick={() => updateBOQTier('regular')}
                   className={`p-3 rounded-lg border cursor-pointer transition ${
                     pkgConfig.boq.tier === 'regular'
                       ? 'border-blue-500 bg-blue-950/30 ring-1 ring-blue-500/50'
@@ -2860,13 +2935,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 </div>
 
                 <div
-                  onClick={() => {
-                    const fee = getBOQPackageFee(pkgSummaries.totalArea, 'premium');
-                    updatePkgConfig((c) => ({
-                      ...c,
-                      boq: { ...c.boq, enabled: true, tier: 'premium', fee },
-                    }));
-                  }}
+                  onClick={() => updateBOQTier('premium')}
                   className={`p-3 rounded-lg border cursor-pointer transition ${
                     pkgConfig.boq.tier === 'premium'
                       ? 'border-emerald-500 bg-emerald-950/20 ring-1 ring-emerald-500/50'
@@ -2971,12 +3040,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
               {/* Site Inspection Tiers (Standard vs Comprehensive) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div
-                  onClick={() =>
-                    updatePkgConfig((c) => ({
-                      ...c,
-                      inspection: { ...c.inspection, enabled: true, fee: 3500 },
-                    }))
-                  }
+                  onClick={() => updateInspectionTier('standard_visit', 3500)}
                   className={`p-3 rounded-lg border cursor-pointer transition ${
                     pkgConfig.inspection.fee === 3500
                       ? 'border-amber-500 bg-amber-950/30 ring-1 ring-amber-500/50'
@@ -2995,12 +3059,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                 </div>
 
                 <div
-                  onClick={() =>
-                    updatePkgConfig((c) => ({
-                      ...c,
-                      inspection: { ...c.inspection, enabled: true, fee: 6500 },
-                    }))
-                  }
+                  onClick={() => updateInspectionTier('advisory_visit', 6500)}
                   className={`p-3 rounded-lg border cursor-pointer transition ${
                     pkgConfig.inspection.fee === 6500
                       ? 'border-emerald-500 bg-emerald-950/20 ring-1 ring-emerald-500/50'
@@ -3033,10 +3092,7 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
                     value={pkgConfig.inspection.fee}
                     onChange={(e) => {
                       const f = parseFloat(e.target.value) || 0;
-                      updatePkgConfig((c) => ({
-                        ...c,
-                        inspection: { ...c.inspection, fee: f },
-                      }));
+                      updateInspectionTier('custom', f);
                     }}
                     className="w-24 px-2 py-1 text-xs font-mono text-right bg-slate-800 border border-slate-700 rounded text-amber-300 focus:outline-hidden"
                   />
@@ -3826,6 +3882,8 @@ export const InvoiceEditor: React.FC<InvoiceEditorProps> = ({
         isOpen={servicesModalCategory !== null}
         onClose={() => setServicesModalCategory(null)}
         initialCategory={servicesModalCategory || 'architectural'}
+        storageScope={storageScope}
+        onSaved={onPackageServicesSaved}
       />
     </div>
   );

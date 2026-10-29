@@ -154,7 +154,7 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
 
     if (mode === 'page') {
       const calculatedScale = Math.min(vw / paperW, vh / measuredH);
-      const clamped = Math.min(1.2, Math.max(0.3, Math.round(calculatedScale * 100) / 100));
+      const clamped = Math.min(1.2, Math.max(0.1, Math.round(calculatedScale * 100) / 100));
       setScale(clamped);
       setFitMode('page');
     } else if (mode === 'width') {
@@ -200,7 +200,7 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
 
   const handleDownloadPDF = async () => {
     setIsGeneratingPDF(true);
-    setStatusMessage('Compiling centered A4 PDF...');
+    setStatusMessage('Compiling preview-matched PDF...');
 
     const cleanNames = selectedNames.map((s) => s.replace(/[^a-zA-Z0-9]/g, '_')).join('_');
     const filename = `${invoice.invoiceNumber}_${cleanNames || 'Invoice'}.pdf`;
@@ -217,55 +217,23 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
 
   const handleSystemPrint = async () => {
     setIsPrinting(true);
-    setStatusMessage('Preparing print copy & opening printer dialog...');
-
-    // 1. Trigger isolated iframe print (renders exact styled document)
+    setStatusMessage('Preparing print from the invoice preview...');
     try {
-      printInvoiceElement('univision-invoice-preview-sheet');
-    } catch (e) {
-      console.warn('Iframe print error', e);
-    }
-
-    // 2. Also attempt window.print() after small delay
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (err) {
-        console.warn('System window.print blocked', err);
-      }
-    }, 200);
-
-    // 3. Immediately compile and download high-resolution centered A4 PDF
-    try {
-      setStatusMessage('Saving centered A4 PDF print file...');
-      const cleanNames = selectedNames.map((s) => s.replace(/[^a-zA-Z0-9]/g, '_')).join('_');
-      const filename = `${invoice.invoiceNumber}_${cleanNames || 'Invoice'}.pdf`;
-
-      const success = await downloadInvoicePDF(filteredInvoice, {
-        filename,
-        onProgress: (msg) => setStatusMessage(msg),
-      });
-
-      if (success) {
-        setStatusMessage('Print command sent & A4 PDF downloaded!');
-        setPrintNotice(
-          'Print dialog triggered! A centered high-resolution A4 PDF has also been saved to your downloads for direct printing.'
-        );
-      } else {
-        setStatusMessage('Print command sent');
-      }
+      const success = await printInvoiceElement('univision-invoice-preview-sheet');
+      setStatusMessage(success ? 'Preview-matched print dialog opened.' : 'Unable to prepare the print document.');
+      setPrintNotice(success ? 'The app preview is being printed proportionally to your printer’s selected page.' : null);
     } catch (err) {
-      console.error('Error generating PDF during print', err);
-      setStatusMessage('Print command sent');
+      console.error('Error preparing print document', err);
+      setStatusMessage('Print preparation failed.');
     } finally {
       setIsPrinting(false);
       setTimeout(() => setStatusMessage(''), 5000);
     }
   };
 
-  const handleDownloadHTML = () => {
-    downloadPrintableHTML(filteredInvoice);
-    setStatusMessage('Standalone HTML downloaded!');
+  const handleDownloadHTML = async () => {
+    const success = await downloadPrintableHTML(filteredInvoice);
+    setStatusMessage(success ? 'Preview-matched HTML downloaded!' : 'Unable to create the preview HTML.');
     setTimeout(() => setStatusMessage(''), 3000);
   };
 
@@ -303,11 +271,11 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
                 Print Preview: {invoice.invoiceNumber}
               </h3>
               <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/60">
-                A4 (210 × 297 mm)
+                Preview dimensions
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Review centered paper alignment, page fit, and margins before printing.
+              Review the exact invoice preview before printing.
             </p>
           </div>
         </div>
@@ -323,7 +291,7 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
                 ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-700'
             }`}
-            title="Fit entire A4 page on screen without scrolling"
+            title="Fit the entire invoice preview on screen without scrolling"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>Fit Page</span>
@@ -428,14 +396,14 @@ export const PrintPreviewModal: React.FC<PrintPreviewModalProps> = ({
             onClick={handleDownloadPDF}
             disabled={isGeneratingPDF}
             className="px-4 py-1.5 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 disabled:opacity-60 rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Download centered A4 PDF document"
+            title="Download a PDF matching the invoice preview"
           >
             {isGeneratingPDF ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <FileDown className="w-3.5 h-3.5" />
             )}
-            <span>Download A4 PDF</span>
+            <span>Download Preview PDF</span>
           </button>
 
           {/* System Print */}

@@ -30,7 +30,7 @@ export function DepartmentOfficialsCard({
   isPrintVersion = false,
   className = '',
 }: DepartmentOfficialsCardProps) {
-  const { officials, updateOfficial, addOfficial, deleteOfficial, resetToDefaults } =
+  const { officials, updateOfficial, addOfficial, deleteOfficial, resetToDefaults, saveStatus } =
     useDepartmentOfficials(department);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -103,6 +103,12 @@ export function DepartmentOfficialsCard({
               <span>{title}</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-mono font-semibold border border-blue-500/30">
                 {officials.length} Assigned Officials
+              </span>
+              <span
+                role="status"
+                className={`text-[10px] font-semibold ${saveStatus === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}
+              >
+                {saveStatus === 'saved' ? 'Saved locally' : 'Save failed'}
               </span>
             </h4>
             <p className="text-xs text-slate-400">

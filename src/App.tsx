@@ -34,6 +34,7 @@ import {
   savePortalActiveId,
   loadPortalArchived,
   savePortalArchived,
+  getPortalStorageKeys,
 } from './utils/portalManager';
 import { createDefaultInvoiceByType } from './data/sampleInvoices';
 import {
@@ -62,6 +63,9 @@ import { DepartmentOfficialsModal } from './components/DepartmentOfficialsModal'
 import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { calculateInvoice, formatCurrency } from './utils/calculations';
 import { downloadInvoicePDF } from './utils/pdfExport';
+import { printInvoiceElement } from './utils/printHelper';
+import { applyPackageServicesToInvoice } from './utils/packageManager';
+import { PackageCategory } from './services/packageServicesStorage';
 
 export type SubViewMode = 'split' | 'preview_only' | 'schedule' | 'list' | 'rates';
 
@@ -136,6 +140,7 @@ export default function App() {
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [notification, setNotification] = useState<string>('');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
+  const [saveStatusMessage, setSaveStatusMessage] = useState('Auto-saved locally');
 
   // Split View paper preview responsive scaling
   const [splitScale, setSplitScale] = useState<number>(0.58);
@@ -148,18 +153,66 @@ export default function App() {
     document.body.className = `portal-${activePortal} bg-slate-950 text-slate-100 antialiased font-sans`;
   }, [activePortal]);
 
-  // Persistent storage auto-save for current portal
+  // Persist only the active portal's invoice data under its own storage keys.
   useEffect(() => {
-    savePortalInvoices(activePortal, currentInvoices);
-  }, [activePortal, currentInvoices]);
+    const invoicesSaved = savePortalInvoices(activePortal, currentInvoices);
+    const activeIdSaved = savePortalActiveId(activePortal, activeInvoice.id);
+    const archivedSaved = savePortalArchived(activePortal, currentArchived);
+    const saved = invoicesSaved && activeIdSaved && archivedSaved;
+    setSaveStatusMessage(saved ? 'Auto-saved locally' : 'Save failed — storage unavailable');
+  }, [activePortal, currentInvoices, activeInvoice.id, currentArchived]);
 
+  // Keep another open window in sync without mixing data between portal keys.
   useEffect(() => {
-    savePortalActiveId(activePortal, activeInvoice.id);
-  }, [activePortal, activeInvoice.id]);
+    const portalKeys = (Object.keys(PORTAL_CONFIGS) as PortalKey[]).map((portal) => ({
+      portal,
+      keys: getPortalStorageKeys(portal),
+    }));
 
-  useEffect(() => {
-    savePortalArchived(activePortal, currentArchived);
-  }, [activePortal, currentArchived]);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || !event.key || event.newValue === null) return;
+      const match = portalKeys.find(({ keys }) =>
+        event.key === keys.invoices || event.key === keys.activeId || event.key === keys.archived
+      );
+      if (!match) return;
+
+      try {
+        const parsed: unknown = event.key === match.keys.activeId
+          ? event.newValue
+          : JSON.parse(event.newValue);
+        if (event.key === match.keys.activeId) {
+          setActiveIdByPortal((prev) => prev[match.portal] === event.newValue
+            ? prev
+            : { ...prev, [match.portal]: event.newValue });
+          return;
+        }
+
+        if (!Array.isArray(parsed) || !parsed.every((invoice) =>
+          typeof invoice === 'object' && invoice !== null && typeof invoice.id === 'string'
+        )) return;
+
+        const invoices = parsed as Invoice[];
+        if (event.key === match.keys.invoices) {
+          setInvoicesByPortal((prev) =>
+            JSON.stringify(prev[match.portal]) === event.newValue
+              ? prev
+              : { ...prev, [match.portal]: invoices }
+          );
+        } else {
+          setArchivedByPortal((prev) =>
+            JSON.stringify(prev[match.portal]) === event.newValue
+              ? prev
+              : { ...prev, [match.portal]: invoices }
+          );
+        }
+      } catch (error) {
+        console.error(`Unable to sync ${match.portal} portal storage update`, error);
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   // Responsive scaling calculations
   useEffect(() => {
@@ -214,6 +267,14 @@ export default function App() {
         inv.id === updated.id ? { ...updated, updatedAt: new Date().toISOString() } : inv
       ),
     }));
+  };
+
+  const handlePackageServicesSaved = (
+    category: PackageCategory,
+    regular: string[],
+    premiumExtra: string[]
+  ) => {
+    handleUpdateActiveInvoice(applyPackageServicesToInvoice(activeInvoice, category, regular, premiumExtra));
   };
 
   // 2. CREATE NEW INVOICE IN CURRENT PORTAL
@@ -431,10 +492,39 @@ export default function App() {
 
   // MANUAL SAVE BACKUP
   const handleManualSave = () => {
-    savePortalInvoices(activePortal, currentInvoices);
-    savePortalActiveId(activePortal, activeInvoice.id);
-    setNotification(`Saved ${activeInvoice.invoiceNumber} to local storage`);
+    const invoicesSaved = savePortalInvoices(activePortal, currentInvoices);
+    const activeIdSaved = savePortalActiveId(activePortal, activeInvoice.id);
+    const archivedSaved = savePortalArchived(activePortal, currentArchived);
+    const saved = invoicesSaved && activeIdSaved && archivedSaved;
+    setSaveStatusMessage(saved ? 'Saved locally' : 'Save failed — storage unavailable');
+    setNotification(saved
+      ? `Saved ${activeInvoice.invoiceNumber} to local storage`
+      : `Unable to save ${activeInvoice.invoiceNumber}. Browser storage may be full or unavailable.`);
     setTimeout(() => setNotification(''), 3000);
+  };
+
+  const handleImportInvoice = (imported: Invoice) => {
+    const now = new Date().toISOString();
+    const importedId = `inv-${activePortal}-${Date.now()}`;
+    const importedInvoice: Invoice = {
+      ...imported,
+      id: importedId,
+      invoiceCategory: activePortal === 'general' ? 'multi_package' : activePortal,
+      createdAt: imported.createdAt || now,
+      updatedAt: now,
+    };
+
+    setInvoicesByPortal((prev) => ({
+      ...prev,
+      [activePortal]: [importedInvoice, ...prev[activePortal]],
+    }));
+    setActiveIdByPortal((prev) => ({
+      ...prev,
+      [activePortal]: importedId,
+    }));
+    setSubView('split');
+    setNotification(`Imported ${imported.invoiceNumber} into ${currentConfig.shortTitle}`);
+    setTimeout(() => setNotification(''), 4000);
   };
 
   const handleSaveDataFile = () => {
@@ -456,7 +546,7 @@ export default function App() {
   // PDF DOWNLOAD & PRINT PREVIEW
   const handleDownloadPDF = async () => {
     setIsGeneratingPDF(true);
-    setNotification(`Compiling high-resolution A4 PDF for ${activeInvoice.invoiceNumber}...`);
+    setNotification(`Compiling preview-matched PDF for ${activeInvoice.invoiceNumber}...`);
 
     const success = await downloadInvoicePDF(activeInvoice, {
       filename: `${activeInvoice.invoiceNumber}_Univision_Invoice.pdf`,
@@ -478,14 +568,15 @@ export default function App() {
   };
 
   const handleSafePrint = async () => {
-    await handleDownloadPDF();
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (err) {
-        console.warn('System print blocked by sandbox', err);
-      }
-    }, 200);
+    setNotification('Preparing print from the invoice preview...');
+    try {
+      const printed = await printInvoiceElement('univision-invoice-sheet');
+      setNotification(printed ? 'Preview-matched print dialog opened.' : 'Unable to prepare the print document.');
+    } catch (error) {
+      console.error('Error preparing print document', error);
+      setNotification('Print preparation failed.');
+    }
+    setTimeout(() => setNotification(''), 4000);
   };
 
   // SYNC FROM TECHNICAL SCHEDULE DIRECTLY TO THIS PORTAL'S ACTIVE INVOICE
@@ -538,32 +629,60 @@ export default function App() {
 
       {/* TOP HEADER: EXACTLY 5 DEDICATED INDEPENDENT PORTALS */}
       <header className="bg-slate-900 border-b border-slate-800 shadow-md sticky top-0 z-40 px-3 sm:px-6 py-2.5">
-        <div className="max-w-7xl mx-auto flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto space-y-3">
           {/* Logo & Corporate Tagline */}
-          <div className="flex items-center gap-3">
-            <UnivisionLogo className="w-9 h-9 shrink-0 drop-shadow-md" />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm sm:text-base tracking-tight text-white">
-                  UNIVISION
-                </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30 uppercase tracking-wider">
-                  5-Portal Studio Suite
-                </span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <UnivisionLogo emblemOnly className="w-9 h-9 shrink-0 drop-shadow-md" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm sm:text-base tracking-tight text-white">UNIVISION</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30 uppercase tracking-wider">
+                    5 Portals
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 hidden sm:block">Invoices, schedules, and packages</p>
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                4 Independent Discipline Portals + 1 General Combined Studio
-              </p>
+            </div>
+            {/* Quick Corporate Tools */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsOfficialsModalOpen(true)}
+                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition cursor-pointer"
+                title="Official personnel & stamping matrix"
+                aria-label="Official personnel"
+              >
+                <Users className="w-4 h-4 text-amber-400" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePopoutWindow(activePortal)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                title="Open this portal in a separate window"
+                aria-label="Open portal in separate window"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsGitHubModalOpen(true)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                title="Deployment and repository details"
+                aria-label="Deployment details"
+              >
+                <Github className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
           {/* 5 PRIMARY INDEPENDENT PORTALS NAV */}
-          <nav className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 no-scrollbar">
+          <nav aria-label="Portals" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             {/* PORTAL 1: ARCHITECTURAL */}
             <button
               type="button"
               onClick={() => setActivePortal('architectural')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`w-full px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 activePortal === 'architectural'
                   ? 'bg-amber-400 text-slate-950 border-amber-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
@@ -571,16 +690,13 @@ export default function App() {
             >
               <Compass className={`w-3.5 h-3.5 ${activePortal === 'architectural' ? 'text-slate-950' : 'text-amber-400'}`} />
               <span>Architectural</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'architectural' ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-slate-800 text-amber-300 border border-amber-500/30'}`}>
-                {invoicesByPortal.architectural[0]?.invoiceNumber || 'INV-ARC-001'}
-              </span>
             </button>
 
             {/* PORTAL 2: STRUCTURAL */}
             <button
               type="button"
               onClick={() => setActivePortal('structural')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`w-full px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 activePortal === 'structural'
                   ? 'bg-blue-500 text-white border-blue-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
@@ -588,16 +704,13 @@ export default function App() {
             >
               <Building2 className={`w-3.5 h-3.5 ${activePortal === 'structural' ? 'text-white' : 'text-blue-400'}`} />
               <span>Structural</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'structural' ? 'bg-blue-700 text-white font-bold' : 'bg-slate-800 text-blue-300 border border-blue-500/30'}`}>
-                {invoicesByPortal.structural[0]?.invoiceNumber || 'INV-STR-001'}
-              </span>
             </button>
 
             {/* PORTAL 3: BOQ */}
             <button
               type="button"
               onClick={() => setActivePortal('boq')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`w-full px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 activePortal === 'boq'
                   ? 'bg-emerald-500 text-white border-emerald-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
@@ -605,16 +718,13 @@ export default function App() {
             >
               <FileSpreadsheet className={`w-3.5 h-3.5 ${activePortal === 'boq' ? 'text-white' : 'text-emerald-400'}`} />
               <span>BOQ Studio</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'boq' ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-800 text-emerald-300 border border-emerald-500/30'}`}>
-                {invoicesByPortal.boq[0]?.invoiceNumber || 'INV-BOQ-001'}
-              </span>
             </button>
 
             {/* PORTAL 4: SITE INSPECTION */}
             <button
               type="button"
               onClick={() => setActivePortal('inspection')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`w-full px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 activePortal === 'inspection'
                   ? 'bg-orange-500 text-white border-orange-400 shadow-md font-bold'
                   : 'bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-700'
@@ -622,16 +732,13 @@ export default function App() {
             >
               <HardHat className={`w-3.5 h-3.5 ${activePortal === 'inspection' ? 'text-white' : 'text-orange-400'}`} />
               <span>Site Inspection</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'inspection' ? 'bg-orange-700 text-white font-bold' : 'bg-slate-800 text-orange-300 border border-orange-500/30'}`}>
-                {invoicesByPortal.inspection[0]?.invoiceNumber || 'INV-INS-001'}
-              </span>
             </button>
 
             {/* PORTAL 5: GENERAL INVOICE STUDIO (COMBINED PACKAGES) */}
             <button
               type="button"
               onClick={() => setActivePortal('general')}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`w-full px-2 py-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 activePortal === 'general'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-400 shadow-md font-bold ring-1 ring-purple-300'
                   : 'bg-slate-900/90 text-purple-200 hover:text-white hover:bg-purple-950/60 border-purple-800/60'
@@ -640,77 +747,46 @@ export default function App() {
             >
               <Sparkles className={`w-3.5 h-3.5 ${activePortal === 'general' ? 'text-white' : 'text-purple-400'}`} />
               <span>General Studio (Combined)</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${activePortal === 'general' ? 'bg-purple-900 text-white font-bold' : 'bg-slate-800 text-purple-300 border border-purple-500/30'}`}>
-                {invoicesByPortal.general[0]?.invoiceNumber || 'INV-PKG-001'}
-              </span>
             </button>
           </nav>
-
-          {/* Quick Corporate Tools */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsOfficialsModalOpen(true)}
-              className="px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-              title="Official personnel & stamping matrix"
-            >
-              <Users className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden lg:inline">Who Did What</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handlePopoutWindow(activePortal)}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              title="Pop out this portal in a dedicated standalone OS window"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsGitHubModalOpen(true)}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              title="GitHub Deployment & Repository details"
-            >
-              <Github className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
 
         {/* SUB-BAR: ACTIVE PORTAL WORKSPACE CONTROLS */}
         <div className="max-w-7xl mx-auto mt-2 pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           {/* Sub-view navigation for THIS portal */}
-          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar font-medium">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-1.5 font-medium w-full">
             <button
               type="button"
               onClick={() => setSubView('split')}
-              className={`px-2.5 py-1 rounded transition cursor-pointer whitespace-nowrap ${
+              title="Edit the active invoice"
+              className={`w-full px-2.5 py-2 rounded text-center transition cursor-pointer ${
                 currentSubView === 'split'
                   ? 'bg-slate-800 text-amber-400 font-bold border border-amber-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Invoice Studio (Split)
+              Invoice
             </button>
 
             <button
               type="button"
               onClick={() => setSubView('preview_only')}
-              className={`px-2.5 py-1 rounded transition cursor-pointer whitespace-nowrap ${
+              title="Preview the complete invoice"
+              className={`w-full px-2.5 py-2 rounded text-center transition cursor-pointer ${
                 currentSubView === 'preview_only'
                   ? 'bg-slate-800 text-amber-400 font-bold border border-amber-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Full Document Preview
+              Preview
             </button>
 
             {/* Technical Schedule or Combined Package Matrix */}
             <button
               type="button"
               onClick={() => setSubView('schedule')}
-              className={`px-2.5 py-1 rounded transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              title="Edit the portal's schedules and package details"
+              className={`w-full px-2.5 py-2 rounded transition cursor-pointer flex items-center justify-center gap-1.5 ${
                 currentSubView === 'schedule'
                   ? 'bg-slate-800 text-amber-400 font-bold border border-amber-500/30'
                   : 'text-slate-400 hover:text-white'
@@ -718,34 +794,28 @@ export default function App() {
             >
               <SlidersHorizontal className="w-3 h-3 text-amber-400" />
               <span>
-                {activePortal === 'general'
-                  ? 'Cross-Discipline Package Matrix'
-                  : activePortal === 'architectural'
-                  ? 'Drawing Sheets Schedule'
-                  : activePortal === 'structural'
-                  ? 'Framing & Rebar Schedule'
-                  : activePortal === 'boq'
-                  ? 'BOQ Takeoff & Brackets'
-                  : 'Inspection Log & Audit'}
+                Schedule
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => setSubView('list')}
-              className={`px-2.5 py-1 rounded transition cursor-pointer whitespace-nowrap ${
+              title={`Browse ${currentConfig.shortTitle} invoices`}
+              className={`w-full px-2.5 py-2 rounded text-center transition cursor-pointer ${
                 currentSubView === 'list'
                   ? 'bg-slate-800 text-amber-400 font-bold border border-amber-500/30'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {currentConfig.shortTitle} Directory ({currentInvoices.length})
+              Invoices ({currentInvoices.length})
             </button>
 
             <button
               type="button"
               onClick={() => setSubView('rates')}
-              className={`px-2.5 py-1 rounded transition cursor-pointer whitespace-nowrap ${
+              title="View package rates and scope"
+              className={`w-full px-2.5 py-2 rounded text-center transition cursor-pointer ${
                 currentSubView === 'rates'
                   ? 'bg-slate-800 text-amber-400 font-bold border border-amber-500/30'
                   : 'text-slate-400 hover:text-white'
@@ -851,11 +921,14 @@ export default function App() {
               {/* Invoice Editor with discipline locking for the 4 portals, or combined mode for General Studio */}
               <InvoiceEditor
                 invoice={activeInvoice}
+                storageScope={activePortal}
+                onPackageServicesSaved={handlePackageServicesSaved}
                 onChange={handleUpdateActiveInvoice}
                 onOpenSignatureModal={() => setIsSignatureModalOpen(true)}
                 onDownloadPDF={handleDownloadPDF}
                 onPrintPreview={() => handleOpenPrintPreview()}
                 lockStudioTab={lockedStudioTab}
+                saveStatusMessage={saveStatusMessage}
               />
             </div>
 
@@ -1013,6 +1086,7 @@ export default function App() {
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('general')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
+                onPackageServicesSaved={handlePackageServicesSaved}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
                     setActivePortal(p);
@@ -1026,6 +1100,7 @@ export default function App() {
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('architectural')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
+                onPackageServicesSaved={handlePackageServicesSaved}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
                     setActivePortal(p);
@@ -1039,6 +1114,7 @@ export default function App() {
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('structural')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
+                onPackageServicesSaved={handlePackageServicesSaved}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
                     setActivePortal(p);
@@ -1052,6 +1128,7 @@ export default function App() {
                 isStandaloneWindow={false}
                 onPopoutWindow={() => handlePopoutWindow('boq')}
                 onGenerateInvoice={handleSyncTechnicalScheduleToInvoice}
+                onPackageServicesSaved={handlePackageServicesSaved}
                 onSwitchPortal={(p) => {
                   if (p === 'structural' || p === 'boq' || p === 'inspection' || p === 'architectural') {
                     setActivePortal(p);
@@ -1466,6 +1543,7 @@ export default function App() {
           isOpen={isExportModalOpen}
           onClose={() => setIsExportModalOpen(false)}
           invoice={activeInvoice}
+          onImportInvoice={handleImportInvoice}
           onOpenPrintPreview={() => handleOpenPrintPreview()}
         />
       )}

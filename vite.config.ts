@@ -16,7 +16,6 @@ export default defineConfig(() => {
       rollupOptions: {
         input: {
           main: path.resolve('index.html'),
-          app: path.resolve('src/main.tsx'),
         },
         output: {
           entryFileNames: 'assets/index.js',
