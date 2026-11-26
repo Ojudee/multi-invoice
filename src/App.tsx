@@ -55,8 +55,8 @@ import { InvoiceList } from './components/InvoiceList';
 import { SignatureModal } from './components/SignatureModal';
 import { ExportModal } from './components/ExportModal';
 import { PrintPreviewModal } from './components/PrintPreviewModal';
-import { ArchitecturalSchedulePortal } from './components/ArchitecturalSchedulePortal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { ArchitecturalSchedulePortal } from './components/ArchitecturalSchedulePortal';
 import { StructuralEngineeringPortal } from './components/StructuralEngineeringPortal';
 import { BOQPortal } from './components/BOQPortal';
 import { SiteInspectionPortal } from './components/SiteInspectionPortal';
@@ -319,6 +319,7 @@ export default function App() {
     return recordedPayment;
   };
 
+
   const handlePackageServicesSaved = (
     category: PackageCategory,
     regular: string[],
@@ -353,11 +354,12 @@ export default function App() {
     const target = currentInvoices.find((inv) => inv.id === id);
     if (!target) return;
     const duplicated: Invoice = {
-
       ...target,
       id: `inv-${activePortal}-${Date.now()}`,
       invoiceNumber: `${target.invoiceNumber}-COPY`,
       status: 'draft',
+      depositPaidAmount: 0,
+      payments: [],
       clientSignature: '',
       clientSignatureType: 'none',
       createdAt: new Date().toISOString(),
@@ -392,8 +394,6 @@ export default function App() {
     setArchivedByPortal((prev) => ({
       ...prev,
       [activePortal]: [target, ...prev[activePortal]],
-      depositPaidAmount: 0,
-      payments: [],
     }));
 
     if (activeInvoice.id === id) {
@@ -907,6 +907,16 @@ export default function App() {
 
             <button
               type="button"
+              onClick={() => setIsReceiptModalOpen(true)}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded flex items-center gap-1 transition cursor-pointer"
+              title="Record a payment or open this invoice's receipts"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Receipts</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleDownloadPDF}
               disabled={isGeneratingPDF}
               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold rounded flex items-center gap-1 transition cursor-pointer"
@@ -982,16 +992,6 @@ export default function App() {
                 onPrintPreview={() => handleOpenPrintPreview()}
                 lockStudioTab={lockedStudioTab}
                 saveStatusMessage={saveStatusMessage}
-            <button
-              type="button"
-              onClick={() => setIsReceiptModalOpen(true)}
-              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded flex items-center gap-1 transition cursor-pointer"
-              title="Record a payment or open this invoice's receipts"
-            >
-              <Receipt className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Receipts</span>
-            </button>
-
               />
             </div>
 
@@ -1235,15 +1235,6 @@ export default function App() {
 
               <button
                 type="button"
-            {isReceiptModalOpen && (
-              <ReceiptModal
-                invoice={activeInvoice}
-                portalName={currentConfig.shortTitle}
-                onClose={() => setIsReceiptModalOpen(false)}
-                onRecordPayment={handleRecordPayment}
-              />
-            )}
-
                 onClick={handleCreateNewInvoiceInCurrentPortal}
                 className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-lg transition cursor-pointer flex items-center gap-1.5"
               >
@@ -1607,6 +1598,15 @@ export default function App() {
           onClose={() => setIsPrintPreviewOpen(false)}
           invoice={activeInvoice}
           initialPackageFilter={printPreviewFilter}
+        />
+      )}
+
+      {isReceiptModalOpen && (
+        <ReceiptModal
+          invoice={activeInvoice}
+          portalName={currentConfig.shortTitle}
+          onClose={() => setIsReceiptModalOpen(false)}
+          onRecordPayment={handleRecordPayment}
         />
       )}
 
