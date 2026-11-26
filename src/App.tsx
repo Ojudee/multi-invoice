@@ -137,6 +137,7 @@ export default function App() {
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [printPreviewFilter, setPrintPreviewFilter] = useState<PackageSelectionMap | undefined>(undefined);
   const [isOfficialsModalOpen, setIsOfficialsModalOpen] = useState(false);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
@@ -167,7 +168,6 @@ export default function App() {
   // Keep another open window in sync without mixing data between portal keys.
   useEffect(() => {
     const portalKeys = (Object.keys(PORTAL_CONFIGS) as PortalKey[]).map((portal) => ({
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
       portal,
       keys: getPortalStorageKeys(portal),
     }));
