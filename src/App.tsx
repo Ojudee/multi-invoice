@@ -272,40 +272,6 @@ export default function App() {
     }));
   };
 
-  const handlePackageServicesSaved = (
-    category: PackageCategory,
-    regular: string[],
-    premiumExtra: string[]
-  ) => {
-    handleUpdateActiveInvoice(applyPackageServicesToInvoice(activeInvoice, category, regular, premiumExtra));
-  };
-
-  // 2. CREATE NEW INVOICE IN CURRENT PORTAL
-  const handleCreateNewInvoiceInCurrentPortal = () => {
-    const nextSeq = currentInvoices.length + currentArchived.length + 1;
-    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-    const newInv = createDefaultInvoiceByType(cat, nextSeq);
-
-    setInvoicesByPortal((prev) => ({
-      ...prev,
-      [activePortal]: [newInv, ...prev[activePortal]],
-    }));
-
-    setActiveIdByPortal((prev) => ({
-      ...prev,
-      [activePortal]: newInv.id,
-    }));
-
-    setSubView('split');
-    setNotification(`Created new ${currentConfig.shortTitle} Invoice: ${newInv.invoiceNumber}`);
-    setTimeout(() => setNotification(''), 4000);
-  };
-
-  // 3. DUPLICATE INVOICE IN CURRENT PORTAL
-  const handleDuplicateInvoice = (id: string) => {
-    const target = currentInvoices.find((inv) => inv.id === id);
-    if (!target) return;
-    const duplicated: Invoice = {
   const handleRecordPayment = (
     payment: NewPaymentReceipt
   ): PaymentReceipt | null => {
@@ -352,6 +318,41 @@ export default function App() {
 
     return recordedPayment;
   };
+
+  const handlePackageServicesSaved = (
+    category: PackageCategory,
+    regular: string[],
+    premiumExtra: string[]
+  ) => {
+    handleUpdateActiveInvoice(applyPackageServicesToInvoice(activeInvoice, category, regular, premiumExtra));
+  };
+
+  // 2. CREATE NEW INVOICE IN CURRENT PORTAL
+  const handleCreateNewInvoiceInCurrentPortal = () => {
+    const nextSeq = currentInvoices.length + currentArchived.length + 1;
+    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
+    const newInv = createDefaultInvoiceByType(cat, nextSeq);
+
+    setInvoicesByPortal((prev) => ({
+      ...prev,
+      [activePortal]: [newInv, ...prev[activePortal]],
+    }));
+
+    setActiveIdByPortal((prev) => ({
+      ...prev,
+      [activePortal]: newInv.id,
+    }));
+
+    setSubView('split');
+    setNotification(`Created new ${currentConfig.shortTitle} Invoice: ${newInv.invoiceNumber}`);
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  // 3. DUPLICATE INVOICE IN CURRENT PORTAL
+  const handleDuplicateInvoice = (id: string) => {
+    const target = currentInvoices.find((inv) => inv.id === id);
+    if (!target) return;
+    const duplicated: Invoice = {
 
       ...target,
       id: `inv-${activePortal}-${Date.now()}`,
