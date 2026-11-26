@@ -5,6 +5,17 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+
+  .safe-area-header {
+    padding: max(0.625rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) 0.625rem max(0.75rem, env(safe-area-inset-left));
+  }
+
+  @media (min-width: 640px) {
+    .safe-area-header {
+      padding-right: max(1.5rem, env(safe-area-inset-right));
+      padding-left: max(1.5rem, env(safe-area-inset-left));
+    }
+  }
 }
 
 .font-signature {

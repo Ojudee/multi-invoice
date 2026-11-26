@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Package,
   Receipt,
+  LogOut,
 } from 'lucide-react';
 import { Invoice, NewPaymentReceipt, PackageType, PackageSelectionMap, PaymentReceipt } from './types';
 import {
@@ -36,6 +37,7 @@ import {
   loadPortalArchived,
   savePortalArchived,
   getPortalStorageKeys,
+  createOrganizationInvoice,
 } from './utils/portalManager';
 import { createDefaultInvoiceByType } from './data/sampleInvoices';
 import {
@@ -74,6 +76,20 @@ import { downloadInvoicePDF } from './utils/pdfExport';
 import { printInvoiceElement } from './utils/printHelper';
 import { applyPackageServicesToInvoice } from './utils/packageManager';
 import { PackageCategory } from './services/packageServicesStorage';
+import {
+  AuthData,
+  OrganizationAccount,
+  Organization,
+  WorkspaceData,
+  loadCurrentWorkspace,
+  loadOrganizationAdminData,
+  signOut,
+} from './services/organizationAuth';
+import { OrganizationAccess, OrganizationManager } from './components/OrganizationAccess';
+import { InstallAppButton } from './components/InstallAppButton';
+import { getActiveOrganizationId, hydrateOrganizationStorage, setActiveOrganizationId } from './utils/organizationStorage';
+import { isSupabaseConfigured, requireSupabase } from './services/supabaseClient';
+import { resetIdleActivity, useIdleSignOut } from './hooks/useIdleSignOut';
 
 export type SubViewMode = 'split' | 'preview_only' | 'schedule' | 'list' | 'rates';
 
@@ -84,22 +100,39 @@ function getInitialPortal(): { portal: PortalKey; isStandalone: boolean } {
     if (p === 'general' || p === 'architectural' || p === 'structural' || p === 'boq' || p === 'inspection') {
       return { portal: p, isStandalone: true };
     }
+
   } catch {}
   return { portal: 'architectural', isStandalone: false };
 }
 
-export default function App() {
+interface WorkspaceProps {
+  organization: Organization;
+  account: OrganizationAccount;
+  organizations: Organization[];
+  onSwitchOrganization: (organization: Organization) => void;
+  onLogout: () => void;
+  onManageOrganization: () => void;
+}
+
+function InvoiceWorkspace({
+  organization,
+  account,
+  organizations,
+  onSwitchOrganization,
+  onLogout,
+  onManageOrganization,
+}: WorkspaceProps) {
   const initialInfo = getInitialPortal();
   const [activePortal, setActivePortal] = useState<PortalKey>(initialInfo.portal);
   const [isStandaloneWindow] = useState<boolean>(initialInfo.isStandalone);
 
   // 100% INDEPENDENT INVOICE STATE FOR EACH OF THE 5 PORTALS
   const [invoicesByPortal, setInvoicesByPortal] = useState<Record<PortalKey, Invoice[]>>(() => ({
-    general: loadPortalInvoices('general'),
-    architectural: loadPortalInvoices('architectural'),
-    structural: loadPortalInvoices('structural'),
-    boq: loadPortalInvoices('boq'),
-    inspection: loadPortalInvoices('inspection'),
+    general: loadPortalInvoices('general', organization.company),
+    architectural: loadPortalInvoices('architectural', organization.company),
+    structural: loadPortalInvoices('structural', organization.company),
+    boq: loadPortalInvoices('boq', organization.company),
+    inspection: loadPortalInvoices('inspection', organization.company),
   }));
 
   const [activeIdByPortal, setActiveIdByPortal] = useState<Record<PortalKey, string>>(() => ({
@@ -140,7 +173,7 @@ export default function App() {
   const activeInvoice: Invoice =
     currentInvoices.find((inv) => inv.id === currentActiveId) ||
     currentInvoices[0] ||
-    createDefaultInvoiceByType(defaultCategory, 1);
+    createInvoiceForOrganization(defaultCategory, 1);
 
   // Modals state
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
@@ -159,6 +192,10 @@ export default function App() {
   const paperPreviewRef = useRef<HTMLDivElement>(null);
   const [paperPreviewMode, setPaperPreviewMode] = useState<'fit-page' | 'fit-width' | '100%'>('fit-page');
   const [paperPreviewScale, setPaperPreviewScale] = useState<number>(0.75);
+
+  function createInvoiceForOrganization(category: Parameters<typeof createDefaultInvoiceByType>[0], sequence: number): Invoice {
+    return createOrganizationInvoice(category, sequence, organization.company);
+  }
 
   // Synchronize body class for portal styling
   useEffect(() => {
@@ -384,7 +421,6 @@ export default function App() {
     return true;
   };
 
-
   const handlePackageServicesSaved = (
     category: PackageCategory,
     regular: string[],
@@ -397,7 +433,7 @@ export default function App() {
   const handleCreateNewInvoiceInCurrentPortal = () => {
     const nextSeq = currentInvoices.length + currentArchived.length + 1;
     const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-    const newInv = createDefaultInvoiceByType(cat, nextSeq);
+    const newInv = createInvoiceForOrganization(cat, nextSeq);
 
     setInvoicesByPortal((prev) => ({
       ...prev,
@@ -572,7 +608,7 @@ export default function App() {
 
   const handleRestoreSampleInvoices = () => {
     const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-    const defaultInv = createDefaultInvoiceByType(cat, 1);
+    const defaultInv = createInvoiceForOrganization(cat, 1);
     setInvoicesByPortal((prev) => ({
       ...prev,
       [activePortal]: [defaultInv],
@@ -593,7 +629,9 @@ export default function App() {
     const saved = invoicesSaved && activeIdSaved && archivedSaved;
     setSaveStatusMessage(saved ? 'Saved locally' : 'Save failed — storage unavailable');
     setNotification(saved
-      ? `Saved ${activeInvoice.invoiceNumber} to local storage`
+      ? currentInvoices.length > 0
+        ? `Saved ${activeInvoice.invoiceNumber} to local storage`
+        : `Saved the empty ${currentConfig.shortTitle} directory`
       : `Unable to save ${activeInvoice.invoiceNumber}. Browser storage may be full or unavailable.`);
     setTimeout(() => setNotification(''), 3000);
   };
@@ -713,7 +751,7 @@ export default function App() {
   const lockedStudioTab = activePortal === 'general' ? 'multi_package' : activePortal;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 antialiased font-sans selection:bg-amber-400 selection:text-slate-950">
+    <div className="min-h-screen min-h-[100dvh] flex flex-col bg-slate-950 text-slate-100 antialiased font-sans selection:bg-amber-400 selection:text-slate-950">
       {/* GLOBAL TOAST NOTIFICATION */}
       {notification && (
         <div className="fixed top-4 right-4 z-50 bg-slate-900/95 text-white text-xs px-4 py-2.5 rounded-lg border border-amber-500/50 shadow-2xl backdrop-blur-md flex items-center gap-2 animate-bounce">
@@ -723,28 +761,74 @@ export default function App() {
       )}
 
       {/* TOP HEADER: EXACTLY 5 DEDICATED INDEPENDENT PORTALS */}
-      <header className="bg-slate-900 border-b border-slate-800 shadow-md sticky top-0 z-40 px-3 sm:px-6 py-2.5">
+      <header className="safe-area-header bg-slate-900 border-b border-slate-800 shadow-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto space-y-3">
           {/* Logo & Corporate Tagline */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <UnivisionLogo emblemOnly className="w-9 h-9 shrink-0 drop-shadow-md" />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              {organization.name === 'Univision Design and Construction Ltd.' ? (
+                <UnivisionLogo emblemOnly className="w-9 h-9 shrink-0 drop-shadow-md" />
+              ) : (
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-400/10 text-amber-300"><Building2 className="h-5 w-5" /></div>
+              )}
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-sm sm:text-base tracking-tight text-white">UNIVISION</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30 uppercase tracking-wider">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-extrabold text-sm sm:text-base tracking-tight text-white">{organization.company.name}</span>
+                  <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/30 uppercase tracking-wider">
                     5 Portals
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 hidden sm:block">Invoices, schedules, and packages</p>
+                <p className="text-[11px] text-slate-400 hidden sm:block">{organization.company.tagline}</p>
               </div>
             </div>
             {/* Quick Corporate Tools */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex w-full flex-wrap items-center justify-between gap-1 sm:w-auto sm:flex-nowrap sm:justify-end sm:gap-2">
+              <InstallAppButton compact />
+              {organizations.length > 1 && (
+                <label className="sr-only" htmlFor="organization-switcher">Switch organization</label>
+              )}
+              {organizations.length > 1 && (
+                <select
+                  id="organization-switcher"
+                  aria-label="Switch organization"
+                  value={organization.id}
+                  onChange={(event) => {
+                    const selected = organizations.find((candidate) => candidate.id === event.target.value);
+                    if (selected) onSwitchOrganization(selected);
+                  }}
+                  className="w-24 max-w-32 rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-xs font-semibold text-white outline-none focus:border-amber-400 sm:w-auto sm:max-w-40"
+                >
+                  {organizations.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+                </select>
+              )}
+              <span className="hidden text-right text-[10px] leading-tight text-slate-400 sm:block">
+                {account.name}<br />{account.memberships.find((membership) => membership.organizationId === organization.id)?.role}
+              </span>
+              {account.memberships.find((membership) => membership.organizationId === organization.id)?.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={onManageOrganization}
+                  className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+                  title="Manage organization and members"
+                  aria-label="Manage organization"
+                >
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white sm:min-w-0"
+                title="Sign out of this local account"
+                aria-label="Sign out"
+              >
+                <LogOut className="h-4 w-4 sm:hidden" />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsOfficialsModalOpen(true)}
-                className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition cursor-pointer"
+                className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white"
                 title="Official personnel & stamping matrix"
                 aria-label="Official personnel"
               >
@@ -753,7 +837,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => handlePopoutWindow(activePortal)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
                 title="Open this portal in a separate window"
                 aria-label="Open portal in separate window"
               >
@@ -762,7 +846,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsGitHubModalOpen(true)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                className="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
                 title="Deployment and repository details"
                 aria-label="Deployment details"
               >
@@ -1206,6 +1290,19 @@ export default function App() {
               />
             )}
 
+            {isReceiptModalOpen && (
+              <ReceiptModal
+                invoice={activeInvoice}
+                portalName={currentConfig.shortTitle}
+                onClose={() => setIsReceiptModalOpen(false)}
+                onRecordPayment={handleRecordPayment}
+                onUpdateReceipt={handleUpdatePaymentReceipt}
+                onArchiveReceipt={handleArchivePaymentReceipt}
+                onVoidReceipt={handleVoidPaymentReceipt}
+                onDeleteReceipt={handleDeletePaymentReceipt}
+              />
+            )}
+
             {activePortal === 'architectural' && (
               <ArchitecturalSchedulePortal
                 isStandaloneWindow={false}
@@ -1598,7 +1695,7 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 text-xs py-4 px-6 text-center">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            © {new Date().getFullYear()} Univision Design and Construction Ltd. 5-Portal Advance Invoice System.
+            © {new Date().getFullYear()} {organization.company.name}. 5-Portal Advance Invoice System.
           </span>
           <div className="flex items-center gap-4 text-slate-400 font-medium">
             <span>The Gambia</span>
@@ -1647,19 +1744,6 @@ export default function App() {
         />
       )}
 
-      {isReceiptModalOpen && (
-        <ReceiptModal
-          invoice={activeInvoice}
-          portalName={currentConfig.shortTitle}
-          onClose={() => setIsReceiptModalOpen(false)}
-          onRecordPayment={handleRecordPayment}
-          onUpdateReceipt={handleUpdatePaymentReceipt}
-          onArchiveReceipt={handleArchivePaymentReceipt}
-          onVoidReceipt={handleVoidPaymentReceipt}
-          onDeleteReceipt={handleDeletePaymentReceipt}
-        />
-      )}
-
       {isExportModalOpen && (
         <ExportModal
           isOpen={isExportModalOpen}
@@ -1685,5 +1769,242 @@ export default function App() {
         />
       )}
     </div>
+  );
+}
+
+export default function App() {
+  const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [activeOrganizationId, setActiveOrganizationIdState] = useState<string | null>(() => getActiveOrganizationId());
+  const [organizationDataOrganizationId, setOrganizationDataOrganizationId] = useState<string | null>(null);
+  const [organizationDataError, setOrganizationDataError] = useState('');
+  const [syncError, setSyncError] = useState('');
+  const [authData, setAuthData] = useState<AuthData>({ version: 1, organizations: [], accounts: [] });
+  const [managerOpen, setManagerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAuthReady(true);
+      return;
+    }
+
+    let active = true;
+    const refreshWorkspace = async () => {
+      try {
+        const nextWorkspace = await loadCurrentWorkspace();
+        if (!active) return;
+        setWorkspace(nextWorkspace);
+        const stillAvailable = nextWorkspace?.organizations.some((org) => org.id === activeOrganizationId);
+        const nextId = stillAvailable ? activeOrganizationId : nextWorkspace?.organizations[0]?.id || null;
+        setActiveOrganizationIdState(nextId);
+        if (nextId) setActiveOrganizationId(nextId);
+        setAuthError('');
+      } catch (error) {
+        if (active) setAuthError(error instanceof Error ? error.message : 'Unable to load your server account.');
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    };
+
+    void refreshWorkspace();
+    const { data: { subscription } } = requireSupabase().auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setWorkspace(null);
+        setActiveOrganizationIdState(null);
+        setOrganizationDataOrganizationId(null);
+        setManagerOpen(false);
+      } else {
+        window.setTimeout(() => { void refreshWorkspace(); }, 0);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const account = workspace?.account;
+  const organizations = workspace?.organizations || [];
+  const organization = organizations.find((candidate) => candidate.id === activeOrganizationId) || organizations[0];
+  const activeMembership = organization
+    ? account?.memberships.find((membership) => membership.organizationId === organization.id)
+    : undefined;
+
+  useEffect(() => {
+    if (!organization || !activeMembership) {
+      setOrganizationDataOrganizationId(null);
+      return;
+    }
+
+    let active = true;
+    setOrganizationDataOrganizationId(null);
+    setOrganizationDataError('');
+    void hydrateOrganizationStorage(
+      organization.id,
+      organization.name === 'Univision Design and Construction Ltd.' && activeMembership.role === 'admin'
+    ).then(() => {
+      if (active) setOrganizationDataOrganizationId(organization.id);
+    }).catch((error: unknown) => {
+      if (active) setOrganizationDataError(error instanceof Error ? error.message : 'Unable to load organization data.');
+    });
+    return () => { active = false; };
+  }, [organization?.id, activeMembership?.role]);
+
+  useEffect(() => {
+    if (!organization || activeMembership?.role !== 'admin') {
+      setAuthData({ version: 1, organizations: [], accounts: [] });
+      return;
+    }
+    let active = true;
+    void loadOrganizationAdminData(organization.id).then((data) => {
+      if (active) {
+        setAuthData(data);
+        setAuthError('');
+      }
+    }).catch((error: unknown) => {
+      if (active) setAuthError(error instanceof Error ? error.message : 'Unable to load organization members.');
+    });
+    return () => { active = false; };
+  }, [organization?.id, activeMembership?.role]);
+
+  useEffect(() => {
+    const handleSyncStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ organizationId: string; status: string; message?: string }>).detail;
+      if (!detail || detail.organizationId !== organization?.id) return;
+      if (detail.status === 'error') setSyncError(detail.message || 'Server save failed.');
+      else if (detail.status === 'saved') setSyncError('');
+    };
+    window.addEventListener('organization_data_sync_status', handleSyncStatus);
+    return () => window.removeEventListener('organization_data_sync_status', handleSyncStatus);
+  }, [organization?.id]);
+
+  const authenticated = (nextWorkspace: WorkspaceData) => {
+    resetIdleActivity(nextWorkspace.account.id);
+    setWorkspace(nextWorkspace);
+    const nextId = nextWorkspace.organizations[0]?.id || null;
+    setActiveOrganizationIdState(nextId);
+    if (nextId) setActiveOrganizationId(nextId);
+  };
+
+  const logout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Unable to sign out.');
+    }
+  };
+
+  const handleIdleTimeout = async () => {
+    setAuthError('You were signed out after 30 minutes without activity. Sign in again to continue.');
+    try {
+      await signOut();
+    } catch (error) {
+      setAuthError(error instanceof Error
+        ? `Automatic sign-out failed: ${error.message}`
+        : 'Automatic sign-out failed. Please sign out and sign in again.');
+    }
+  };
+  useIdleSignOut(account?.id, handleIdleTimeout);
+
+  if (!authReady) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-200">
+        <p>Connecting to secure account service…</p>
+      </main>
+    );
+  }
+
+  if (!isSupabaseConfigured || !account) {
+    return <OrganizationAccess onAuthenticated={authenticated} initialError={authError} />;
+  }
+
+  const switchOrganization = (nextOrganization: Organization) => {
+    if (!account.memberships.some((membership) => membership.organizationId === nextOrganization.id)) return;
+    setActiveOrganizationId(nextOrganization.id);
+    setActiveOrganizationIdState(nextOrganization.id);
+    setManagerOpen(false);
+  };
+
+  if (organizations.length === 0) {
+    return <OrganizationAccess
+      authenticatedWithoutOrganization
+      initialError={authError}
+      onAuthenticated={authenticated}
+      onLogout={logout}
+    />;
+  }
+
+  if (organizationDataOrganizationId !== organization?.id) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-slate-200">
+        <p>{organizationDataError || 'Loading organization data from the server…'}</p>
+        {organizationDataError && (
+          <button type="button" className="rounded-lg bg-amber-400 px-4 py-2 font-semibold text-slate-950" onClick={() => {
+            setOrganizationDataError('');
+            setOrganizationDataOrganizationId(null);
+            if (organization && activeMembership) {
+              void hydrateOrganizationStorage(
+                organization.id,
+                organization.name === 'Univision Design and Construction Ltd.' && activeMembership.role === 'admin'
+              ).then(() => setOrganizationDataOrganizationId(organization.id)).catch((error: unknown) =>
+                setOrganizationDataError(error instanceof Error ? error.message : 'Unable to load organization data.')
+              );
+            }
+          }}>Retry server connection</button>
+        )}
+      </main>
+    );
+  }
+
+  return (
+    <>
+      <InvoiceWorkspace
+        key={organization.id}
+        organization={organization}
+        account={account}
+        organizations={organizations}
+        onSwitchOrganization={switchOrganization}
+        onLogout={logout}
+        onManageOrganization={() => setManagerOpen(true)}
+      />
+      {(syncError || authError) && (
+        <div className="fixed bottom-3 left-3 right-3 z-[90] mx-auto flex max-w-xl flex-col gap-2">
+          {authError && (
+            <div role="alert" className="rounded-lg border border-rose-500/50 bg-rose-950 px-4 py-3 text-sm text-rose-100 shadow-xl">
+              Account service error: {authError}
+            </div>
+          )}
+          {syncError && (
+            <div role="alert" className="rounded-lg border border-rose-500/50 bg-rose-950 px-4 py-3 text-sm text-rose-100 shadow-xl">
+              Server save failed: {syncError}
+            </div>
+          )}
+        </div>
+      )}
+      {managerOpen && (
+        <OrganizationManager
+          data={authData}
+          account={account}
+          organization={organization}
+          onClose={() => setManagerOpen(false)}
+          onDataChanged={() => {
+            void loadOrganizationAdminData(organization.id).then((data) => {
+              setAuthData(data);
+              setAuthError('');
+            }).catch((error: unknown) =>
+              setAuthError(error instanceof Error ? error.message : 'Unable to refresh organization members.')
+            );
+            void loadCurrentWorkspace().then((nextWorkspace) => {
+              if (nextWorkspace) setWorkspace(nextWorkspace);
+            }).catch((error: unknown) =>
+              setAuthError(error instanceof Error ? error.message : 'Unable to refresh the account.')
+            );
+          }}
+          onSwitch={switchOrganization}
+        />
+      )}
+    </>
   );
 }

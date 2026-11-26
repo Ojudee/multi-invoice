@@ -7,6 +7,8 @@ interface UnivisionLogoProps {
   light?: boolean;
   stacked?: boolean;
   emblemOnly?: boolean;
+  brandName?: string;
+  brandSubtitle?: string;
 }
 
 export const UnivisionLogo: React.FC<UnivisionLogoProps> = ({
@@ -16,6 +18,8 @@ export const UnivisionLogo: React.FC<UnivisionLogoProps> = ({
   light = false,
   stacked = false,
   emblemOnly = false,
+  brandName = 'UNIVISION',
+  brandSubtitle = 'DESIGN AND CONSTRUCTION LTD.',
 }) => {
   // Sizing definitions
   const iconSize =
@@ -108,7 +112,7 @@ export const UnivisionLogo: React.FC<UnivisionLogoProps> = ({
             light ? 'text-white' : 'text-[#0d2345]'
           }`}
         >
-          UNIVISION
+          {brandName}
         </span>
 
         {showSubtitle && (
@@ -126,7 +130,7 @@ export const UnivisionLogo: React.FC<UnivisionLogoProps> = ({
                 light ? 'text-slate-200' : 'text-[#0d2345]'
               }`}
             >
-              DESIGN AND CONSTRUCTION LTD.
+              {brandSubtitle}
             </span>
           </div>
         )}

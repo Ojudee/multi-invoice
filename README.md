@@ -3,6 +3,29 @@
 
 Official production-grade engineering suite for **Univision Design and Construction Ltd.** located at Sukuta-jabang Highway, Sukuta Dalaba, The Gambia.
 
+## Server-backed accounts and organizations
+
+Authentication and organization data use Supabase Auth and PostgreSQL. The first confirmed account after the database migration is applied is assigned the admin role for **Univision Design and Construction Ltd.** by a database trigger (with email confirmation disabled, the first signup is confirmed immediately). Later signups must be added to an organization by one of its admins. Each organization's portal data is stored in PostgreSQL and protected with row-level security; browser storage is only a local cache.
+
+The app can still be hosted as static files (including GitHub Pages) because authentication and persistence run on Supabase. Supabase Free has service quotas and may pause inactive projects; check the current Supabase plan and terms before relying on it for business-critical data. Free hosting is not a guarantee of unlimited or permanent availability.
+
+### Configure Supabase
+
+1. Create a Supabase project on its Free plan.
+2. In the project's SQL Editor, run `supabase/migrations/20261103000000_multi_organization_server.sql`.
+3. In **Authentication → URL Configuration**, add the deployed app URL and local development URL to the allowed redirect URLs. Configure email confirmation to match your signup policy.
+4. Copy the project URL and anon/publishable key into `.env.local` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (see `.env.example`). For GitHub Actions, add the same names as repository Actions secrets and pass them to the build step.
+5. Never put a Supabase service-role key in the frontend or expose it in GitHub Pages build settings. The browser only needs the anon/publishable key; PostgreSQL row-level security enforces organization access.
+6. Deploy the app and use **Sign up**. The first account is the Univision admin. Other users sign up with their own email, then an organization admin adds the registered email from **Manage organization**. Members can switch organizations only after they have been added to them.
+
+Existing Univision data in this browser is imported into the server-backed Univision organization the first time its admin signs in. Keep a separate backup before migrating important invoice records. This migration imports available browser-cached portal data only; it does not migrate browser-local accounts or passwords.
+
+### Install on desktop, phone, or tablet
+
+The app includes a web app manifest and install icons. On a supported desktop or Android browser, use its **Install app** or **Add to Home Screen** option; on iPhone or iPad, use Safari's **Share → Add to Home Screen** option. The app layout adapts to narrow screens and device safe areas. Sign-in and organization sync still require an internet connection; the app does not provide offline invoice access.
+
+Authenticated sessions automatically sign out after **30 minutes without activity**. Activity in another tab on the same origin keeps the session active there as well.
+
 ---
 
 ## 🏛️ Integrated Departments & Service Packages
@@ -37,6 +60,7 @@ The application integrates 5 operational engineering divisions with real-time fe
    - Live interactive split-view and centered A4 paper preview
    - Real-time gross floor area pricing, custom floor scopes, and add-on services
    - 50% deposit tracking, Gambian Dalasi (GMD) accounting, and local bank presets (Ecobank, GTBank, Trust Bank, Bloom Bank, Wave, APS)
+   - Per-invoice payment receipts in every portal, with recorded payment history and print / save-as-PDF output
    - Genuine vector PDF generation and isolated print engine
 
 ---
@@ -54,7 +78,6 @@ Each department maintains an audit trail attributing specific responsibilities, 
 
 ### 2. Structural Engineering Department
 - **Lead Structural & Civil Engineer**: *Engr. Modou Lamin Ceesay* (Reg: `GAM-COREN-STR-0412`) — Computed 3D load combinations (BS 8110:1997), column load take-downs, shear forces, bending moments, and foundation pad dimensions for 160 kN/m² soil.
-   - Per-invoice payment receipts in every portal, with recorded payment history and print / save-as-PDF output
 - **Senior Structural Detailer**: *Mustapha Faye* (Reg: `GAM-ENG-DET-0315`) — Calculated bar cutting lengths, stirrup bends, bending schedules, and total reinforcement weight (16mm, 12mm, 10mm, 8mm high yield B500B steel).
 - **Geotechnical Specialist**: *Engr. Ebrima Jobe* (Reg: `GAM-COREN-GEO-0199`) — Evaluated subsoil strata, coastal ground moisture resistance, foundation concrete cover requirements (50mm pad / 30mm beams), and plinth beams.
 - **Senior Engineering Consultant**: *Engr. Pa Malick Sowe* (Reg: `GAM-COREN-STR-0077`) — Audited deflection limits, crack width controls (w_max ≤ 0.3mm), lap lengths, and lateral wind load resistance (28 m/s basic coastal velocity).

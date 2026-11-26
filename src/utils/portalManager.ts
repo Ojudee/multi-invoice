@@ -1,5 +1,8 @@
 import { Invoice } from '../types';
 import { createDefaultInvoiceByType, INITIAL_INVOICES } from '../data/sampleInvoices';
+import { CompanyInfo } from '../types';
+import { getOrganizationStorageKey, persistOrganizationValue } from './organizationStorage';
+import { DEFAULT_COMPANY } from '../data/constants';
 
 export type PortalKey = 'general' | 'architectural' | 'structural' | 'boq' | 'inspection';
 
@@ -28,11 +31,37 @@ export interface PortalStorageKeys {
   archived: string;
 }
 
+export function createOrganizationInvoice(
+  category: Parameters<typeof createDefaultInvoiceByType>[0],
+  sequence: number,
+  company: CompanyInfo
+): Invoice {
+  const invoice = createDefaultInvoiceByType(category, sequence);
+  invoice.company = { ...company };
+  const isUnivisionCompany = Object.entries(DEFAULT_COMPANY).every(
+    ([key, value]) => company[key as keyof CompanyInfo] === value
+  );
+  if (!isUnivisionCompany) {
+    invoice.additionalNotes = invoice.additionalNotes.replace(/univision/gi, company.name);
+    invoice.paymentDetails = {
+      bankName: '',
+      accountName: company.name,
+      accountNumber: '',
+      reference: invoice.invoiceNumber,
+      swiftCode: '',
+      branch: '',
+      mobileMoneyProvider: '',
+      mobileMoneyNumber: '',
+    };
+  }
+  return invoice;
+}
+
 export function getPortalStorageKeys(portalKey: PortalKey): PortalStorageKeys {
   return {
-    invoices: `univision_portal_${portalKey}_invoices_v5`,
-    activeId: `univision_portal_${portalKey}_active_id_v5`,
-    archived: `univision_portal_${portalKey}_archived_v5`,
+    invoices: getOrganizationStorageKey(`univision_portal_${portalKey}_invoices_v5`),
+    activeId: getOrganizationStorageKey(`univision_portal_${portalKey}_active_id_v5`),
+    archived: getOrganizationStorageKey(`univision_portal_${portalKey}_archived_v5`),
   };
 }
 
@@ -132,7 +161,7 @@ export const PORTAL_CONFIGS: Record<PortalKey, PortalConfig> = {
 /**
  * Loads invoices for a specific portal (1 of 5) from isolated storage
  */
-export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
+export function loadPortalInvoices(portalKey: PortalKey, company?: CompanyInfo): Invoice[] {
   try {
     const storageKey = getPortalStorageKeys(portalKey).invoices;
     const saved = localStorage.getItem(storageKey);
@@ -142,7 +171,7 @@ export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
     }
 
     // Attempt migration from v4 or legacy storage if exists
-    const v4Saved = localStorage.getItem(`univision_portal_${portalKey}_invoices_v4`);
+    const v4Saved = localStorage.getItem(getOrganizationStorageKey(`univision_portal_${portalKey}_invoices_v4`));
     if (v4Saved) {
       const parsedV4 = JSON.parse(v4Saved);
       if (Array.isArray(parsedV4)) {
@@ -152,9 +181,9 @@ export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
     }
 
     const legacySaved =
-      localStorage.getItem('univision_invoices_v3') ||
-      localStorage.getItem('univision_invoices_v2') ||
-      localStorage.getItem('univision_invoices_v1');
+      localStorage.getItem(getOrganizationStorageKey('univision_invoices_v3')) ||
+      localStorage.getItem(getOrganizationStorageKey('univision_invoices_v2')) ||
+      localStorage.getItem(getOrganizationStorageKey('univision_invoices_v1'));
     if (legacySaved) {
       const parsedLegacy = JSON.parse(legacySaved);
       if (Array.isArray(parsedLegacy)) {
@@ -188,7 +217,9 @@ export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
 
   // Fallback to sample default invoice for this portal
   const categoryType = portalKey === 'general' ? 'multi_package' : portalKey;
-  const defaultInvoice = createDefaultInvoiceByType(categoryType, 1);
+  const defaultInvoice = company
+    ? createOrganizationInvoice(categoryType, 1, company)
+    : createDefaultInvoiceByType(categoryType, 1);
   return [defaultInvoice];
 }
 
@@ -201,6 +232,7 @@ export function savePortalInvoices(portalKey: PortalKey, invoices: Invoice[]): b
     const serialized = JSON.stringify(invoices);
     if (localStorage.getItem(storageKey) !== serialized) {
       localStorage.setItem(storageKey, serialized);
+      persistOrganizationValue(storageKey, serialized);
     }
     return true;
   } catch (e) {
@@ -229,7 +261,10 @@ export function loadPortalActiveId(portalKey: PortalKey, defaultId: string): str
 export function savePortalActiveId(portalKey: PortalKey, id: string): boolean {
   try {
     const key = getPortalStorageKeys(portalKey).activeId;
-    if (localStorage.getItem(key) !== id) localStorage.setItem(key, id);
+    if (localStorage.getItem(key) !== id) {
+      localStorage.setItem(key, id);
+      persistOrganizationValue(key, id);
+    }
     return true;
   } catch (e) {
     console.warn(`Failed to save ${portalKey} active invoice ID`, e);
@@ -261,7 +296,10 @@ export function savePortalArchived(portalKey: PortalKey, archived: Invoice[]): b
   try {
     const key = getPortalStorageKeys(portalKey).archived;
     const serialized = JSON.stringify(archived);
-    if (localStorage.getItem(key) !== serialized) localStorage.setItem(key, serialized);
+    if (localStorage.getItem(key) !== serialized) {
+      localStorage.setItem(key, serialized);
+      persistOrganizationValue(key, serialized);
+    }
     return true;
   } catch (e) {
     console.warn(`Failed to save ${portalKey} archived invoices`, e);

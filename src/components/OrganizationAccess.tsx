@@ -13,9 +13,10 @@ import {
 import { DEFAULT_COMPANY } from '../data/constants';
 import { CompanyInfo } from '../types';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import { InstallAppButton } from './InstallAppButton';
 
-const fieldClass = 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-amber-400';
-const buttonClass = 'rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50';
+const fieldClass = 'min-h-11 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-base text-white outline-none focus:border-amber-400';
+const buttonClass = 'min-h-11 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50';
 
 interface AccessProps {
   onAuthenticated: (workspace: WorkspaceData) => void;
@@ -69,27 +70,33 @@ export function OrganizationAccess({
 
   if (authenticatedWithoutOrganization) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
+      <main className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-slate-950 px-4 text-slate-100">
         <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center shadow-2xl">
           <Building2 className="mx-auto h-9 w-9 text-amber-300" />
           <h1 className="text-xl font-extrabold text-white">Waiting for organization access</h1>
           <p className="text-sm leading-relaxed text-slate-300">Your account is registered, but it is not a member of an organization yet. Ask an organization administrator to add this email address, then sign in again.</p>
           {initialError && <p role="alert" className="text-sm text-rose-200">{initialError}</p>}
-          <button type="button" className={buttonClass} onClick={onLogout}>Sign out</button>
+          <div className="flex items-center justify-center gap-3">
+            <InstallAppButton />
+            <button type="button" className={buttonClass} onClick={onLogout}>Sign out</button>
+          </div>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
+    <main className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
       <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-8">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="rounded-xl bg-amber-400/10 p-3 text-amber-300"><Building2 className="h-6 w-6" /></div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">SAQ Multi-Invoice</p>
-            <h1 className="mt-1 text-xl font-extrabold text-white">{isRegistering ? 'Create account' : 'Sign in'}</h1>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="rounded-xl bg-amber-400/10 p-3 text-amber-300"><Building2 className="h-6 w-6" /></div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">SAQ Multi-Invoice</p>
+              <h1 className="mt-1 text-xl font-extrabold text-white">{isRegistering ? 'Create account' : 'Sign in'}</h1>
+            </div>
           </div>
+          <InstallAppButton compact />
         </div>
 
         {!isSupabaseConfigured ? (
@@ -141,7 +148,7 @@ export function OrganizationAccess({
             </form>
             <button
               type="button"
-              className="mt-4 w-full text-center text-sm font-semibold text-amber-300 hover:text-amber-200"
+              className="mt-4 min-h-11 w-full text-center text-sm font-semibold text-amber-300 hover:text-amber-200"
               onClick={() => { setIsRegistering((current) => !current); setError(''); setNotice(''); }}
             >
               {isRegistering ? 'Already have an account? Sign in' : 'Need an account? Sign up'}

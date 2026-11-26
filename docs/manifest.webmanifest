@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "SAQ Multi-Invoice",
+  "short_name": "SAQ Invoice",
+  "description": "Create and manage invoices, receipts, and project schedules for your organization.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#0b2341",
+  "icons": [
+    {
+      "src": "./pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

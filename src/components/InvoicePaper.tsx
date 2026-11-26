@@ -105,7 +105,11 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
       <div className="grid grid-cols-12 items-center gap-2 pb-2.5 w-full">
         {/* Brand & Logo (Left, 5 cols) */}
         <div className="col-span-12 sm:col-span-5 shrink-0">
-          <UnivisionLogo size="md" />
+          <UnivisionLogo
+            size="md"
+            brandName={activeInvoice.company.name}
+            brandSubtitle={activeInvoice.company.tagline}
+          />
         </div>
 
         {/* Company Contact Details (Center, 4 cols) */}
@@ -126,12 +130,8 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
 
         {/* Right Gold Slogan (Right, 3 cols) */}
         <div className="col-span-12 sm:col-span-3 text-right pr-1">
-          <div className="font-slogan italic text-sm sm:text-base font-medium text-[#c27803] leading-tight whitespace-nowrap">
-            Build Your
-            <br />
-            <span className="text-base sm:text-lg font-bold">Vision</span>
-            <br />
-            With Us
+          <div className="font-slogan italic text-sm sm:text-base font-medium text-[#c27803] leading-tight">
+            {activeInvoice.company.slogan}
           </div>
         </div>
       </div>
@@ -949,7 +949,13 @@ export const InvoicePaper: React.FC<InvoicePaperProps> = ({
       {/* 9. BOTTOM FOOTER BAR */}
       <div className="bg-[#0b2341] text-white px-3.5 py-1.5 rounded-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-xs">
         <div className="flex items-center gap-2">
-          <UnivisionLogo size="sm" light showSubtitle={true} />
+          <UnivisionLogo
+            size="sm"
+            light
+            showSubtitle={true}
+            brandName={activeInvoice.company.name}
+            brandSubtitle={activeInvoice.company.tagline}
+          />
         </div>
         <div className="font-slogan italic text-amber-300 text-xs sm:text-[13px] tracking-wide text-right">
           {activeInvoice.company.footerQuote}

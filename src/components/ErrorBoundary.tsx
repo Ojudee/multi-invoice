@@ -32,7 +32,9 @@ export class ErrorBoundary extends Component<Props, State> {
     try {
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
         const key = localStorage.key(index);
-        if (key?.startsWith('univision_')) localStorage.removeItem(key);
+        if (key && (key.startsWith('univision_') || /^org_[\w-]+_univision_/.test(key))) {
+          localStorage.removeItem(key);
+        }
       }
       for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
         const key = sessionStorage.key(index);

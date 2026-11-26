@@ -1,12 +1,14 @@
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
+import { getOrganizationStorageKey, persistOrganizationValue } from '../utils/organizationStorage';
 
 export type PortalSaveStatus = 'saved' | 'error';
 
 export function usePortalStorage<T>(
-  key: string,
+  legacyKey: string,
   initialValue: T,
   isValid: (value: unknown) => value is T
 ): [T, Dispatch<SetStateAction<T>>, PortalSaveStatus] {
+  const key = getOrganizationStorageKey(legacyKey);
   const [value, setValue] = useState<T>(() => {
     try {
       const saved = localStorage.getItem(key);
@@ -27,6 +29,7 @@ export function usePortalStorage<T>(
       const serialized = JSON.stringify(value);
       if (localStorage.getItem(key) !== serialized) {
         localStorage.setItem(key, serialized);
+        persistOrganizationValue(key, serialized);
       }
       setSaveStatus('saved');
     } catch (error) {

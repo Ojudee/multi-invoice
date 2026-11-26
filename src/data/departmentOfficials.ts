@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getOrganizationStorageKey, persistOrganizationValue } from '../utils/organizationStorage';
 
 export type DepartmentKey = 'architectural' | 'structural' | 'boq' | 'inspection' | 'commercial';
 
@@ -251,11 +252,11 @@ export const DEFAULT_DEPARTMENT_OFFICIALS: Record<DepartmentKey, DepartmentOffic
   ],
 };
 
-const STORAGE_KEY = 'univision_department_officials_v1';
+const STORAGE_KEY = () => getOrganizationStorageKey('univision_department_officials_v1');
 
 export function getStoredOfficials(): Record<DepartmentKey, DepartmentOfficial[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY());
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
@@ -274,9 +275,11 @@ export function getStoredOfficials(): Record<DepartmentKey, DepartmentOfficial[]
 
 export function saveStoredOfficials(officials: Record<DepartmentKey, DepartmentOfficial[]>): boolean {
   try {
+    const storageKey = STORAGE_KEY();
     const serialized = JSON.stringify(officials);
-    if (localStorage.getItem(STORAGE_KEY) !== serialized) {
-      localStorage.setItem(STORAGE_KEY, serialized);
+    if (localStorage.getItem(storageKey) !== serialized) {
+      localStorage.setItem(storageKey, serialized);
+      persistOrganizationValue(storageKey, serialized);
       window.dispatchEvent(new Event('univision_officials_updated'));
     }
     return true;
@@ -291,15 +294,17 @@ export function useDepartmentOfficials(department?: DepartmentKey) {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'error'>('saved');
 
   useEffect(() => {
+    const storageKey = STORAGE_KEY();
     setSaveStatus(saveStoredOfficials(allOfficials) ? 'saved' : 'error');
   }, [allOfficials]);
 
   useEffect(() => {
+    const storageKey = STORAGE_KEY();
     const handleUpdate = () => {
       setAllOfficials(getStoredOfficials());
     };
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea === localStorage && event.key === STORAGE_KEY) {
+      if (event.storageArea === localStorage && event.key === storageKey) {
         setAllOfficials(getStoredOfficials());
       }
     };
