@@ -23,8 +23,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Package,
+  Receipt,
 } from 'lucide-react';
-import { Invoice, PackageType, PackageSelectionMap } from './types';
+import { Invoice, NewPaymentReceipt, PackageType, PackageSelectionMap, PaymentReceipt } from './types';
 import {
   PortalKey,
   PORTAL_CONFIGS,
@@ -55,6 +56,7 @@ import { SignatureModal } from './components/SignatureModal';
 import { ExportModal } from './components/ExportModal';
 import { PrintPreviewModal } from './components/PrintPreviewModal';
 import { ArchitecturalSchedulePortal } from './components/ArchitecturalSchedulePortal';
+import { ReceiptModal } from './components/ReceiptModal';
 import { StructuralEngineeringPortal } from './components/StructuralEngineeringPortal';
 import { BOQPortal } from './components/BOQPortal';
 import { SiteInspectionPortal } from './components/SiteInspectionPortal';
@@ -165,6 +167,7 @@ export default function App() {
   // Keep another open window in sync without mixing data between portal keys.
   useEffect(() => {
     const portalKeys = (Object.keys(PORTAL_CONFIGS) as PortalKey[]).map((portal) => ({
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
       portal,
       keys: getPortalStorageKeys(portal),
     }));
@@ -303,6 +306,53 @@ export default function App() {
     const target = currentInvoices.find((inv) => inv.id === id);
     if (!target) return;
     const duplicated: Invoice = {
+  const handleRecordPayment = (
+    payment: NewPaymentReceipt
+  ): PaymentReceipt | null => {
+    const calculations = calculateInvoice(activeInvoice);
+    const paidSoFar = Math.max(0, Number(activeInvoice.depositPaidAmount) || 0);
+    const amount = Number(payment.amount);
+    const remainingBalance = Math.max(0, calculations.grandTotal - paidSoFar);
+
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remainingBalance) return null;
+
+    const totalPaidAfter = paidSoFar + amount;
+    const balanceAfter = Math.max(0, calculations.grandTotal - totalPaidAfter);
+    const nextStatus =
+      balanceAfter === 0
+        ? 'paid'
+        : totalPaidAfter >= calculations.depositRequiredAmount
+        ? 'deposit_paid'
+        : activeInvoice.status === 'overdue'
+        ? 'overdue'
+        : 'issued';
+    const recordedPayment: PaymentReceipt = {
+      ...payment,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      receiptNumber: `${activeInvoice.invoiceNumber}-R${String((activeInvoice.payments || []).length + 1).padStart(3, '0')}`,
+      amount,
+      invoiceNumber: activeInvoice.invoiceNumber,
+      invoiceTotal: calculations.grandTotal,
+      currency: activeInvoice.currency,
+      company: { ...activeInvoice.company },
+      clientName: activeInvoice.client.name,
+      clientPhone: activeInvoice.client.phone,
+      clientEmail: activeInvoice.client.email,
+      projectName: activeInvoice.project.projectName,
+      totalPaidAfter,
+      balanceAfter,
+    };
+
+    handleUpdateActiveInvoice({
+      ...activeInvoice,
+      payments: [...(activeInvoice.payments || []), recordedPayment],
+      depositPaidAmount: totalPaidAfter,
+      status: nextStatus,
+    });
+
+    return recordedPayment;
+  };
+
       ...target,
       id: `inv-${activePortal}-${Date.now()}`,
       invoiceNumber: `${target.invoiceNumber}-COPY`,
@@ -341,6 +391,8 @@ export default function App() {
     setArchivedByPortal((prev) => ({
       ...prev,
       [activePortal]: [target, ...prev[activePortal]],
+      depositPaidAmount: 0,
+      payments: [],
     }));
 
     if (activeInvoice.id === id) {
@@ -929,6 +981,16 @@ export default function App() {
                 onPrintPreview={() => handleOpenPrintPreview()}
                 lockStudioTab={lockedStudioTab}
                 saveStatusMessage={saveStatusMessage}
+            <button
+              type="button"
+              onClick={() => setIsReceiptModalOpen(true)}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded flex items-center gap-1 transition cursor-pointer"
+              title="Record a payment or open this invoice's receipts"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Receipts</span>
+            </button>
+
               />
             </div>
 
@@ -1172,6 +1234,15 @@ export default function App() {
 
               <button
                 type="button"
+            {isReceiptModalOpen && (
+              <ReceiptModal
+                invoice={activeInvoice}
+                portalName={currentConfig.shortTitle}
+                onClose={() => setIsReceiptModalOpen(false)}
+                onRecordPayment={handleRecordPayment}
+              />
+            )}
+
                 onClick={handleCreateNewInvoiceInCurrentPortal}
                 className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-lg transition cursor-pointer flex items-center gap-1.5"
               >

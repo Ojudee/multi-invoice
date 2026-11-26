@@ -54,6 +54,7 @@ Each department maintains an audit trail attributing specific responsibilities, 
 
 ### 2. Structural Engineering Department
 - **Lead Structural & Civil Engineer**: *Engr. Modou Lamin Ceesay* (Reg: `GAM-COREN-STR-0412`) — Computed 3D load combinations (BS 8110:1997), column load take-downs, shear forces, bending moments, and foundation pad dimensions for 160 kN/m² soil.
+   - Per-invoice payment receipts in every portal, with recorded payment history and print / save-as-PDF output
 - **Senior Structural Detailer**: *Mustapha Faye* (Reg: `GAM-ENG-DET-0315`) — Calculated bar cutting lengths, stirrup bends, bending schedules, and total reinforcement weight (16mm, 12mm, 10mm, 8mm high yield B500B steel).
 - **Geotechnical Specialist**: *Engr. Ebrima Jobe* (Reg: `GAM-COREN-GEO-0199`) — Evaluated subsoil strata, coastal ground moisture resistance, foundation concrete cover requirements (50mm pad / 30mm beams), and plinth beams.
 - **Senior Engineering Consultant**: *Engr. Pa Malick Sowe* (Reg: `GAM-COREN-STR-0077`) — Audited deflection limits, crack width controls (w_max ≤ 0.3mm), lap lengths, and lateral wind load resistance (28 m/s basic coastal velocity).

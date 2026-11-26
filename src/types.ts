@@ -53,6 +53,41 @@ export interface PaymentDetails {
   mobileMoneyNumber?: string;
 }
 
+export interface PaymentReceipt {
+  id: string;
+  receiptNumber: string;
+  amount: number;
+  paymentDate: string;
+  method: string;
+  reference: string;
+  invoiceNumber: string;
+  invoiceTotal: number;
+  currency: CurrencyCode;
+  company: CompanyInfo;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  projectName: string;
+  totalPaidAfter: number;
+  balanceAfter: number;
+}
+
+export type NewPaymentReceipt = Omit<
+  PaymentReceipt,
+  | 'id'
+  | 'receiptNumber'
+  | 'invoiceNumber'
+  | 'invoiceTotal'
+  | 'currency'
+  | 'company'
+  | 'clientName'
+  | 'clientPhone'
+  | 'clientEmail'
+  | 'projectName'
+  | 'totalPaidAfter'
+  | 'balanceAfter'
+>;
+
 export interface CompanyInfo {
   name: string;
   tagline: string;
@@ -93,6 +128,7 @@ export interface Invoice {
   taxPercent: number; // e.g. 0% or 15% VAT
   depositPercent: number; // e.g. 50% advance deposit
   depositPaidAmount: number;
+  payments?: PaymentReceipt[];
   
   // Legal & Financial
   terms: string[];
