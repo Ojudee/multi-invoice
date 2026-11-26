@@ -62,6 +62,7 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [isArchiveAllModalOpen, setIsArchiveAllModalOpen] = useState(false);
   const [isEmptyArchiveModalOpen, setIsEmptyArchiveModalOpen] = useState(false);
+  const [pendingDeletion, setPendingDeletion] = useState<{ invoice: Invoice; archived: boolean } | null>(null);
 
   // Filtered active invoices
   const filteredActiveInvoices = invoices.filter((inv) => {
@@ -509,12 +510,10 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteInvoice(inv.id);
-                        }}
+                        onClick={() => setPendingDeletion({ invoice: inv, archived: false })}
                         className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-700 rounded transition-colors cursor-pointer"
-                        title="Delete invoice"
+                        title="Delete invoice permanently"
+                        aria-label={`Delete ${inv.invoiceNumber}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -620,12 +619,10 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
 
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onPermanentDeleteArchived(inv.id);
-                        }}
+                        onClick={() => setPendingDeletion({ invoice: inv, archived: true })}
                         className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition-colors cursor-pointer"
                         title="Delete permanently from archive"
+                        aria-label={`Delete ${inv.invoiceNumber} permanently from archive`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -773,6 +770,59 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Empty Archive Permanently</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDeletion && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-invoice-delete-title"
+        >
+          <div className="w-full max-w-md space-y-4 rounded-xl border border-rose-500/50 bg-slate-900 p-5 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="rounded-lg border border-rose-500/40 bg-rose-950/80 p-2">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 id="confirm-invoice-delete-title" className="text-base font-bold text-white">
+                  Delete {pendingDeletion.archived ? 'archived' : ''} invoice?
+                </h3>
+                <p className="text-xs text-rose-300">{pendingDeletion.invoice.invoiceNumber}</p>
+              </div>
+            </div>
+
+            <p className="text-sm leading-relaxed text-slate-300">
+              This permanently removes the invoice and its payment receipts. This cannot be undone.
+              {pendingDeletion.archived ? '' : ' To keep a recoverable copy, cancel and use Archive instead.'}
+            </p>
+
+            <div className="flex justify-end gap-2 border-t border-slate-800 pt-3">
+              <button
+                type="button"
+                onClick={() => setPendingDeletion(null)}
+                className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (pendingDeletion.archived) {
+                    onPermanentDeleteArchived(pendingDeletion.invoice.id);
+                  } else {
+                    onDeleteInvoice(pendingDeletion.invoice.id);
+                  }
+                  setPendingDeletion(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-300"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete permanently
               </button>
             </div>
           </div>

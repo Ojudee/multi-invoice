@@ -136,18 +136,16 @@ export function loadPortalInvoices(portalKey: PortalKey): Invoice[] {
   try {
     const storageKey = getPortalStorageKeys(portalKey).invoices;
     const saved = localStorage.getItem(storageKey);
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
+      if (Array.isArray(parsed)) return parsed;
     }
 
     // Attempt migration from v4 or legacy storage if exists
     const v4Saved = localStorage.getItem(`univision_portal_${portalKey}_invoices_v4`);
     if (v4Saved) {
       const parsedV4 = JSON.parse(v4Saved);
-      if (Array.isArray(parsedV4) && parsedV4.length > 0) {
+      if (Array.isArray(parsedV4)) {
         savePortalInvoices(portalKey, parsedV4);
         return parsedV4;
       }

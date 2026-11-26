@@ -131,7 +131,10 @@ export default function App() {
   const currentInvoices = invoicesByPortal[activePortal] || [];
   const currentActiveId = activeIdByPortal[activePortal];
   const currentArchived = archivedByPortal[activePortal] || [];
-  const currentSubView = subViewByPortal[activePortal] || 'split';
+  const currentSubView = currentInvoices.length === 0
+    ? 'list'
+    : subViewByPortal[activePortal] || 'split';
+  const activeIdToPersist = currentInvoices.find((invoice) => invoice.id === currentActiveId)?.id || '';
 
   const defaultCategory = activePortal === 'general' ? 'multi_package' : activePortal;
   const activeInvoice: Invoice =
@@ -165,11 +168,11 @@ export default function App() {
   // Persist only the active portal's invoice data under its own storage keys.
   useEffect(() => {
     const invoicesSaved = savePortalInvoices(activePortal, currentInvoices);
-    const activeIdSaved = savePortalActiveId(activePortal, activeInvoice.id);
+    const activeIdSaved = savePortalActiveId(activePortal, activeIdToPersist);
     const archivedSaved = savePortalArchived(activePortal, currentArchived);
     const saved = invoicesSaved && activeIdSaved && archivedSaved;
     setSaveStatusMessage(saved ? 'Auto-saved locally' : 'Save failed — storage unavailable');
-  }, [activePortal, currentInvoices, activeInvoice.id, currentArchived]);
+  }, [activePortal, currentInvoices, activeIdToPersist, currentArchived]);
 
   // Keep another open window in sync without mixing data between portal keys.
   useEffect(() => {
@@ -262,6 +265,7 @@ export default function App() {
 
   // Set sub-view for active portal
   const setSubView = (mode: SubViewMode) => {
+    if (currentInvoices.length === 0 && mode !== 'list' && mode !== 'rates') return;
     setSubViewByPortal((prev) => ({
       ...prev,
       [activePortal]: mode,
@@ -459,24 +463,11 @@ export default function App() {
       [activePortal]: [target, ...prev[activePortal]],
     }));
 
-    if (activeInvoice.id === id) {
-      if (remaining.length > 0) {
-        setActiveIdByPortal((prev) => ({
-          ...prev,
-          [activePortal]: remaining[0].id,
-        }));
-      } else {
-        const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-        const fresh = createDefaultInvoiceByType(cat, 1);
-        setInvoicesByPortal((prev) => ({
-          ...prev,
-          [activePortal]: [fresh],
-        }));
-        setActiveIdByPortal((prev) => ({
-          ...prev,
-          [activePortal]: fresh.id,
-        }));
-      }
+    if (currentActiveId === id) {
+      setActiveIdByPortal((prev) => ({
+        ...prev,
+        [activePortal]: remaining[0]?.id || '',
+      }));
     }
 
     setNotification(`Archived ${target.invoiceNumber} in ${currentConfig.shortTitle} Vault.`);
@@ -509,31 +500,21 @@ export default function App() {
 
   // 6. DELETE INVOICE IN CURRENT PORTAL
   const handleDeleteInvoice = (id: string) => {
+    const target = currentInvoices.find((inv) => inv.id === id);
+    if (!target) return;
+
     const remaining = currentInvoices.filter((inv) => inv.id !== id);
-    if (remaining.length === 0) {
-      const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-      const fresh = createDefaultInvoiceByType(cat, 1);
-      setInvoicesByPortal((prev) => ({
-        ...prev,
-        [activePortal]: [fresh],
-      }));
+    setInvoicesByPortal((prev) => ({
+      ...prev,
+      [activePortal]: remaining,
+    }));
+    if (currentActiveId === id) {
       setActiveIdByPortal((prev) => ({
         ...prev,
-        [activePortal]: fresh.id,
+        [activePortal]: remaining[0]?.id || '',
       }));
-    } else {
-      setInvoicesByPortal((prev) => ({
-        ...prev,
-        [activePortal]: remaining,
-      }));
-      if (activeInvoice.id === id) {
-        setActiveIdByPortal((prev) => ({
-          ...prev,
-          [activePortal]: remaining[0].id,
-        }));
-      }
     }
-    setNotification('Invoice removed from current portal.');
+    setNotification(`Deleted ${target.invoiceNumber} from ${currentConfig.shortTitle}.`);
     setTimeout(() => setNotification(''), 3000);
   };
 
@@ -544,15 +525,13 @@ export default function App() {
       ...prev,
       [activePortal]: [...prev[activePortal], ...currentInvoices],
     }));
-    const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-    const fresh = createDefaultInvoiceByType(cat, 1);
     setInvoicesByPortal((prev) => ({
       ...prev,
-      [activePortal]: [fresh],
+      [activePortal]: [],
     }));
     setActiveIdByPortal((prev) => ({
       ...prev,
-      [activePortal]: fresh.id,
+      [activePortal]: '',
     }));
     setNotification(`Archived all ${currentConfig.shortTitle} invoices.`);
     setTimeout(() => setNotification(''), 3000);
@@ -609,7 +588,7 @@ export default function App() {
   // MANUAL SAVE BACKUP
   const handleManualSave = () => {
     const invoicesSaved = savePortalInvoices(activePortal, currentInvoices);
-    const activeIdSaved = savePortalActiveId(activePortal, activeInvoice.id);
+    const activeIdSaved = savePortalActiveId(activePortal, activeIdToPersist);
     const archivedSaved = savePortalArchived(activePortal, currentArchived);
     const saved = invoicesSaved && activeIdSaved && archivedSaved;
     setSaveStatusMessage(saved ? 'Saved locally' : 'Save failed — storage unavailable');
@@ -944,7 +923,9 @@ export default function App() {
           {/* Action buttons for THIS portal's active invoice */}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono text-slate-400 hidden md:inline">
-              Active: <strong className="text-amber-400">{activeInvoice.invoiceNumber}</strong>
+              {currentInvoices.length > 0
+                ? <>Active: <strong className="text-amber-400">{activeInvoice.invoiceNumber}</strong></>
+                : 'No active invoice'}
             </span>
 
             <button
@@ -961,6 +942,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleManualSave}
+              disabled={currentInvoices.length === 0}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-semibold rounded flex items-center gap-1 transition cursor-pointer"
               title="Save current invoice changes"
             >
@@ -971,6 +953,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsReceiptModalOpen(true)}
+              disabled={currentInvoices.length === 0}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded flex items-center gap-1 transition cursor-pointer"
               title="Record a payment or open this invoice's receipts"
             >
@@ -981,7 +964,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleDownloadPDF}
-              disabled={isGeneratingPDF}
+              disabled={isGeneratingPDF || currentInvoices.length === 0}
               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold rounded flex items-center gap-1 transition cursor-pointer"
               title="Download high-resolution vector PDF"
             >
@@ -996,6 +979,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => handleOpenPrintPreview()}
+              disabled={currentInvoices.length === 0}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded flex items-center gap-1 transition cursor-pointer"
               title="Print preview & dialog"
             >
@@ -1006,6 +990,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsExportModalOpen(true)}
+              disabled={currentInvoices.length === 0}
               className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition cursor-pointer"
               title="Export, WhatsApp, Email"
             >
@@ -1323,17 +1308,15 @@ export default function App() {
               onArchiveInvoice={handleArchiveInvoice}
               onArchiveAll={handleArchiveAll}
               onDeleteAll={() => {
-                const cat = activePortal === 'general' ? 'multi_package' : activePortal;
-                const fresh = createDefaultInvoiceByType(cat, 1);
                 setInvoicesByPortal((prev) => ({
                   ...prev,
-                  [activePortal]: [fresh],
+                  [activePortal]: [],
                 }));
                 setActiveIdByPortal((prev) => ({
                   ...prev,
-                  [activePortal]: fresh.id,
+                  [activePortal]: '',
                 }));
-                setNotification(`Reset ${currentConfig.shortTitle} invoices directory.`);
+                setNotification(`Deleted all active ${currentConfig.shortTitle} invoices.`);
                 setTimeout(() => setNotification(''), 3000);
               }}
               onRestoreInvoice={handleRestoreInvoice}
