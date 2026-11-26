@@ -64,6 +64,12 @@ import { PackagesPortal } from './components/PackagesPortal';
 import { DepartmentOfficialsModal } from './components/DepartmentOfficialsModal';
 import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { calculateInvoice, formatCurrency } from './utils/calculations';
+import {
+  getInvoicePaidAmount,
+  getPaymentBaselineAmount,
+  isActivePaymentReceipt,
+  recalculatePaymentLedger,
+} from './utils/paymentReceiptLedger';
 import { downloadInvoicePDF } from './utils/pdfExport';
 import { printInvoiceElement } from './utils/printHelper';
 import { applyPackageServicesToInvoice } from './utils/packageManager';
@@ -276,26 +282,24 @@ export default function App() {
     payment: NewPaymentReceipt
   ): PaymentReceipt | null => {
     const calculations = calculateInvoice(activeInvoice);
-    const paidSoFar = Math.max(0, Number(activeInvoice.depositPaidAmount) || 0);
+    const paidSoFar = getInvoicePaidAmount(activeInvoice);
     const amount = Number(payment.amount);
     const remainingBalance = Math.max(0, calculations.grandTotal - paidSoFar);
 
     if (!Number.isFinite(amount) || amount <= 0 || amount > remainingBalance) return null;
 
-    const totalPaidAfter = paidSoFar + amount;
-    const balanceAfter = Math.max(0, calculations.grandTotal - totalPaidAfter);
-    const nextStatus =
-      balanceAfter === 0
-        ? 'paid'
-        : totalPaidAfter >= calculations.depositRequiredAmount
-        ? 'deposit_paid'
-        : activeInvoice.status === 'overdue'
-        ? 'overdue'
-        : 'issued';
+    const baselineAmount = getPaymentBaselineAmount(activeInvoice);
+    const receiptSequence = Math.max(
+      activeInvoice.paymentReceiptSequence || 1,
+      ...(activeInvoice.payments || []).map((receipt) => {
+        const match = receipt.receiptNumber.match(/-R(\d+)$/);
+        return match ? Number(match[1]) + 1 : 1;
+      })
+    );
     const recordedPayment: PaymentReceipt = {
       ...payment,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      receiptNumber: `${activeInvoice.invoiceNumber}-R${String((activeInvoice.payments || []).length + 1).padStart(3, '0')}`,
+      receiptNumber: `${activeInvoice.invoiceNumber}-R${String(receiptSequence).padStart(3, '0')}`,
       amount,
       invoiceNumber: activeInvoice.invoiceNumber,
       invoiceTotal: calculations.grandTotal,
@@ -305,18 +309,75 @@ export default function App() {
       clientPhone: activeInvoice.client.phone,
       clientEmail: activeInvoice.client.email,
       projectName: activeInvoice.project.projectName,
-      totalPaidAfter,
-      balanceAfter,
+      totalPaidAfter: paidSoFar + amount,
+      balanceAfter: Math.max(0, calculations.grandTotal - paidSoFar - amount),
     };
 
+    const payments = [...(activeInvoice.payments || []), recordedPayment];
+    const ledger = recalculatePaymentLedger(activeInvoice, payments, baselineAmount);
     handleUpdateActiveInvoice({
       ...activeInvoice,
-      payments: [...(activeInvoice.payments || []), recordedPayment],
-      depositPaidAmount: totalPaidAfter,
-      status: nextStatus,
+      ...ledger,
+      paymentReceiptSequence: receiptSequence + 1,
     });
 
     return recordedPayment;
+  };
+
+  const handleUpdatePaymentReceipt = (updated: PaymentReceipt): PaymentReceipt | null => {
+    const payments = activeInvoice.payments || [];
+    const existing = payments.find((receipt) => receipt.id === updated.id);
+    if (!existing || !isActivePaymentReceipt(existing)) return null;
+
+    const nextPayments = payments.map((receipt) => receipt.id === updated.id ? updated : receipt);
+    const ledger = recalculatePaymentLedger(activeInvoice, nextPayments);
+    if (ledger.depositPaidAmount > calculateInvoice(activeInvoice).grandTotal) return null;
+
+    handleUpdateActiveInvoice({ ...activeInvoice, ...ledger });
+    return ledger.payments?.find((receipt) => receipt.id === updated.id) || null;
+  };
+
+  const handleArchivePaymentReceipt = (id: string, archived: boolean): PaymentReceipt | null => {
+    const payments = activeInvoice.payments || [];
+    const existing = payments.find((receipt) => receipt.id === id);
+    if (!existing) return null;
+
+    const updated = archived
+      ? { ...existing, archivedAt: new Date().toISOString() }
+      : (() => {
+          const { archivedAt: _archivedAt, ...rest } = existing;
+          return rest;
+        })();
+    const nextPayments = payments.map((receipt) => receipt.id === id ? updated : receipt);
+    handleUpdateActiveInvoice({ ...activeInvoice, payments: nextPayments });
+    return updated;
+  };
+
+  const handleVoidPaymentReceipt = (id: string, reason: string): PaymentReceipt | null => {
+    const payments = activeInvoice.payments || [];
+    const existing = payments.find((receipt) => receipt.id === id);
+    if (!existing || !isActivePaymentReceipt(existing) || !reason.trim()) return null;
+
+    const updated: PaymentReceipt = {
+      ...existing,
+      status: 'voided',
+      voidedAt: new Date().toISOString(),
+      voidReason: reason.trim(),
+    };
+    const nextPayments = payments.map((receipt) => receipt.id === id ? updated : receipt);
+    const ledger = recalculatePaymentLedger(activeInvoice, nextPayments);
+    handleUpdateActiveInvoice({ ...activeInvoice, ...ledger });
+    return ledger.payments?.find((receipt) => receipt.id === id) || null;
+  };
+
+  const handleDeletePaymentReceipt = (id: string): boolean => {
+    const payments = activeInvoice.payments || [];
+    if (!payments.some((receipt) => receipt.id === id)) return false;
+
+    const nextPayments = payments.filter((receipt) => receipt.id !== id);
+    const ledger = recalculatePaymentLedger(activeInvoice, nextPayments);
+    handleUpdateActiveInvoice({ ...activeInvoice, ...ledger });
+    return true;
   };
 
 
@@ -360,6 +421,8 @@ export default function App() {
       status: 'draft',
       depositPaidAmount: 0,
       payments: [],
+      paymentBaselineAmount: 0,
+      paymentReceiptSequence: 1,
       clientSignature: '',
       clientSignatureType: 'none',
       createdAt: new Date().toISOString(),
@@ -1607,6 +1670,10 @@ export default function App() {
           portalName={currentConfig.shortTitle}
           onClose={() => setIsReceiptModalOpen(false)}
           onRecordPayment={handleRecordPayment}
+          onUpdateReceipt={handleUpdatePaymentReceipt}
+          onArchiveReceipt={handleArchivePaymentReceipt}
+          onVoidReceipt={handleVoidPaymentReceipt}
+          onDeleteReceipt={handleDeletePaymentReceipt}
         />
       )}
 

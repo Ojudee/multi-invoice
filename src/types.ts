@@ -70,6 +70,10 @@ export interface PaymentReceipt {
   projectName: string;
   totalPaidAfter: number;
   balanceAfter: number;
+  status?: 'active' | 'voided';
+  voidedAt?: string;
+  voidReason?: string;
+  archivedAt?: string;
 }
 
 export type NewPaymentReceipt = Omit<
@@ -86,6 +90,10 @@ export type NewPaymentReceipt = Omit<
   | 'projectName'
   | 'totalPaidAfter'
   | 'balanceAfter'
+  | 'status'
+  | 'voidedAt'
+  | 'voidReason'
+  | 'archivedAt'
 >;
 
 export interface CompanyInfo {
@@ -129,6 +137,8 @@ export interface Invoice {
   depositPercent: number; // e.g. 50% advance deposit
   depositPaidAmount: number;
   payments?: PaymentReceipt[];
+  paymentBaselineAmount?: number;
+  paymentReceiptSequence?: number;
   
   // Legal & Financial
   terms: string[];
